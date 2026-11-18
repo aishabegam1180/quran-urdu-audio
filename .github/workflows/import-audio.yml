@@ -1,0 +1,38 @@
+# Copies the audio from the public Google Drive folder into this repo's
+# "audio" release, where the app streams and downloads it from.
+# Run it from the Actions tab whenever the Drive files change.
+name: Import audio from Google Drive
+
+on:
+  workflow_dispatch:
+    inputs:
+      drive_folder_id:
+        description: Google Drive folder ID
+        default: 1xpOr4l0ki7bEzVvcmZtoJPZ-Brf4syN_
+  push:
+    branches: [main]
+    paths: [scripts/fetch_drive_audio.py, .github/workflows/import-audio.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install gdown requests
+      - name: Download from Drive
+        run: python scripts/fetch_drive_audio.py "${{ inputs.drive_folder_id || '1xpOr4l0ki7bEzVvcmZtoJPZ-Brf4syN_' }}" audio_out
+      - name: Publish to the "audio" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view audio >/dev/null 2>&1 || \
+            gh release create audio --title "Quran audio (Arabic + Urdu)" --notes "Audio files used by the app. Do not delete."
+          gh release upload audio audio_out/* --clobber
+          echo "Uploaded $(ls audio_out | wc -l) files" >> "$GITHUB_STEP_SUMMARY"
