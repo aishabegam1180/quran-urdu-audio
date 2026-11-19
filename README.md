@@ -1,4 +1,4 @@
-# Quran Urdu Audio
+# Quran Safar – Urdu Tarjuma
 
 An Android app for listening to the Holy Quran (Arabic recitation by Mishary Alafasy, each ayah followed by its Urdu meaning) while travelling.
 

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Quran Urdu Audio",
+    "name": "Quran Safar – Urdu Tarjuma",
     "slug": "quran-urdu-audio",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,7 +11,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0F5132",
+        "backgroundColor": "#0B2F23",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -34,7 +34,16 @@
           "enableBackgroundPlayback": true
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#0B2F23"
+        }
+      ]
     ]
   }
 }

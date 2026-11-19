@@ -56,7 +56,7 @@ export default function App() {
       {fontsLoaded ? (
         <Main />
       ) : (
-        <View style={{ flex: 1, backgroundColor: LIGHT.header, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ flex: 1, backgroundColor: '#0B2F23', alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={LIGHT.gold} />
         </View>
       )}
@@ -134,7 +134,7 @@ function Main() {
       applySpeed();
       player.setActiveForLockScreen(
         true,
-        { title: label(tr), artist: 'Mishary Alafasy · Urdu', albumTitle: 'Holy Quran' },
+        { title: label(tr), artist: 'Mishary Alafasy · Urdu', albumTitle: 'Quran Safar' },
         {
           showSeekBackward: true,
           showSeekForward: true,
