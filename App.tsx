@@ -13,7 +13,7 @@ import {
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, BackHandler, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Share, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   DEFAULT_SETTINGS,
@@ -21,7 +21,7 @@ import {
   Track,
   download,
   formatMB,
-  isDownloaded,
+  isDownloaded as fileExists,
   loadBookmarks,
   loadProgress,
   loadSettings,
@@ -32,6 +32,8 @@ import {
   saveSettings,
   sourceFor,
 } from './src/library';
+import { installCrashHandler, recordError, safe, takeLastCrash } from './src/crash';
+import { ErrorBoundary } from './src/ErrorBoundary';
 import { ListScreen } from './src/screens/ListScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
 import { SleepSheet } from './src/screens/SleepSheet';
@@ -41,6 +43,8 @@ import { AppCtx, Sleep, SurahGroup } from './src/types';
 
 const SKIP_SECONDS = 10;
 const FADE_SECONDS = 10;
+
+installCrashHandler();
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -74,7 +78,8 @@ function Main() {
   const [index, setIndex] = useState<number | null>(null);
   const [downloading, setDownloading] = useState<Record<string, boolean>>({});
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
-  const [, refresh] = useState(0);
+  const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
+  const [screenKey, setScreenKey] = useState(0);
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [view, setView] = useState<'list' | 'player'>('list');
@@ -87,6 +92,7 @@ function Main() {
   const lastSaved = useRef(0);
   const askedNotif = useRef(false);
   const speedRef = useRef(1);
+  const lockScreenOn = useRef(false);
   speedRef.current = settings.speed;
 
   const dark = settings.theme === 'system' ? scheme === 'dark' : settings.theme === 'dark';
@@ -115,10 +121,10 @@ function Main() {
   const ayahText = (tr: Track) => tr.ayahs.replace(/(\d)\s*-\s*(\d)/, '$1–$2');
 
   const applySpeed = useCallback(() => {
-    try {
+    safe('speed', () => {
       player.shouldCorrectPitch = true;
       player.setPlaybackRate(speedRef.current);
-    } catch {}
+    });
   }, [player]);
 
   // ---- load a track (optionally start at a position / autoplay) ----
@@ -129,21 +135,25 @@ function Main() {
       setIndex(i);
       pendingSeek.current = startAt > 1 ? startAt : null;
       lastSaved.current = Date.now();
-      player.replace(sourceFor(tr));
-      player.volume = 1;
+      safe('replace', () => player.replace(sourceFor(tr)));
+      safe('volume', () => (player.volume = 1));
       applySpeed();
-      player.setActiveForLockScreen(
-        true,
-        { title: label(tr), artist: 'Mishary Alafasy · Urdu', albumTitle: 'Quran Safar' },
-        {
-          showSeekBackward: true,
-          showSeekForward: true,
-          seekBackwardIntervalSeconds: SKIP_SECONDS,
-          seekForwardIntervalSeconds: SKIP_SECONDS,
-        },
-      );
-      if (autoplay) player.play();
-      saveProgress(tr.id, startAt);
+      const meta = { title: label(tr), artist: 'Mishary Alafasy · Urdu', albumTitle: 'Quran Safar' };
+      // register lock-screen controls once; afterwards only change the title
+      if (lockScreenOn.current) safe('lockscreen-update', () => player.updateLockScreenMetadata(meta));
+      else
+        lockScreenOn.current =
+          safe('lockscreen', () => {
+            player.setActiveForLockScreen(true, meta, {
+              showSeekBackward: true,
+              showSeekForward: true,
+              seekBackwardIntervalSeconds: SKIP_SECONDS,
+              seekForwardIntervalSeconds: SKIP_SECONDS,
+            });
+            return true;
+          }) ?? false;
+      if (autoplay) safe('play', () => player.play());
+      saveProgress(tr.id, startAt).catch(() => {});
     },
     [player, label, applySpeed],
   );
@@ -160,16 +170,29 @@ function Main() {
       setSettings(s);
       speedRef.current = s.speed;
       setBookmarks(b);
+      takeLastCrash().then((c) => {
+        if (!c) return;
+        const details = `Quran Safar problem report\n${c.at}\n${c.where}: ${c.message}\n${c.stack}`;
+        Alert.alert(
+          'The app had a problem last time',
+          'It has been recovered. You can send the details so it can be fixed.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Share details', onPress: () => Share.share({ message: details }).catch(() => {}) },
+          ],
+        );
+      });
       try {
         const list = await loadTracks();
         setTracks(list);
+        setDownloaded(new Set(list.filter((x) => fileExists(x)).map((x) => x.id)));
         const p = await loadProgress();
         const i = p ? list.findIndex((x) => x.id === p.trackId) : -1;
         if (p && i >= 0) loadTrack(list, i, p.position, false); // ready to continue; one tap on Play
       } catch {
         setError('Could not load the surah list. Connect to the internet once and try again.');
       }
-    })();
+    })().catch((e) => recordError('startup', e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -180,7 +203,7 @@ function Main() {
     if (pendingSeek.current != null) {
       const to = pendingSeek.current;
       pendingSeek.current = null;
-      player.seekTo(to);
+      safe('seek', () => player.seekTo(to)?.catch?.(() => {}));
     }
   }, [status.isLoaded, player, applySpeed]);
 
@@ -190,14 +213,14 @@ function Main() {
     const now = Date.now();
     if (!status.playing || now - lastSaved.current > 5000) {
       lastSaved.current = now;
-      saveProgress(track.id, status.currentTime);
+      saveProgress(track.id, status.currentTime).catch(() => {});
     }
   }, [status.currentTime, status.playing, status.isLoaded, track]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
       if (s !== 'active' && track && status.isLoaded && pendingSeek.current == null)
-        saveProgress(track.id, player.currentTime);
+        safe('appstate', () => saveProgress(track.id, player.currentTime).catch(() => {}));
     });
     return () => sub.remove();
   }, [track, player, status.isLoaded]);
@@ -206,8 +229,10 @@ function Main() {
   useEffect(() => {
     if (!status.didJustFinish || index == null) return;
     if (repeat) {
-      player.seekTo(0);
-      player.play();
+      safe('repeat', () => {
+        player.seekTo(0)?.catch?.(() => {});
+        player.play();
+      });
     } else if (sleep.kind === 'end') {
       setSleepState({ kind: 'off' });
       if (index + 1 < tracks.length) loadTrack(tracks, index + 1, 0, false);
@@ -223,11 +248,13 @@ function Main() {
       const left = Math.max(0, (sleep.endsAt - Date.now()) / 1000);
       setSleepLeft(left);
       if (left <= 0) {
-        player.pause();
-        player.volume = 1;
+        safe('sleep-stop', () => {
+          player.pause();
+          player.volume = 1;
+        });
         setSleepState({ kind: 'off' });
       } else if (left <= FADE_SECONDS) {
-        player.volume = left / FADE_SECONDS;
+        safe('sleep-fade', () => (player.volume = left / FADE_SECONDS));
       }
     };
     tick();
@@ -236,7 +263,7 @@ function Main() {
   }, [sleep, player]);
 
   const setSleep = (choice: 'off' | 'end' | number) => {
-    player.volume = 1;
+    safe('volume', () => (player.volume = 1));
     if (choice === 'off') setSleepState({ kind: 'off' });
     else if (choice === 'end') setSleepState({ kind: 'end' });
     else {
@@ -266,13 +293,13 @@ function Main() {
   const playPause = () => {
     if (!track) return void (tracks.length && loadTrack(tracks, 0));
     ensureNotifPermission();
-    status.playing ? player.pause() : player.play();
+    safe('playpause', () => (status.playing ? player.pause() : player.play()));
   };
 
   const skip = (delta: number) => {
     if (!track) return;
     const d = status.duration || Infinity;
-    player.seekTo(Math.min(Math.max(0, status.currentTime + delta), d - 0.5));
+    safe('skip', () => player.seekTo(Math.min(Math.max(0, status.currentTime + delta), d - 0.5))?.catch?.(() => {}));
   };
 
   const go = (delta: number) => {
@@ -284,24 +311,41 @@ function Main() {
   const pick = (i: number) => {
     ensureNotifPermission();
     if (i === index) {
-      if (!status.playing) player.play();
+      if (!status.playing) safe('play', () => player.play());
     } else loadTrack(tracks, i, 0, true);
     setView('player');
   };
 
-  // ---- downloads ----
+  // ---- downloads (kept in memory so the list doesn't check files on every redraw) ----
+  const isDownloaded = useCallback((tr: Track) => downloaded.has(tr.id), [downloaded]);
+  const markDownloaded = (id: string, on: boolean) =>
+    setDownloaded((s) => {
+      const next = new Set(s);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
   const toggleDownload = async (tr: Track) => {
     if (downloading[tr.id]) return;
     if (isDownloaded(tr)) {
       Alert.alert('Remove download?', `${label(tr)} will stream from the internet again.`, [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Remove', style: 'destructive', onPress: () => (removeDownload(tr), refresh((x) => x + 1)) },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            safe('remove', () => removeDownload(tr));
+            markDownloaded(tr.id, false);
+          },
+        },
       ]);
       return;
     }
     setDownloading((d) => ({ ...d, [tr.id]: true }));
     try {
       await download(tr);
+      markDownloaded(tr.id, true);
     } catch {
       Alert.alert('Download failed', 'Please check your internet connection and try again.');
     }
@@ -322,6 +366,7 @@ function Main() {
           for (let k = 0; k < todo.length; k++) {
             try {
               await download(todo[k]);
+              markDownloaded(todo[k].id, true);
             } catch {
               failed++;
             }
@@ -372,7 +417,7 @@ function Main() {
     playPause,
     skip,
     go,
-    seek: (sec) => player.seekTo(sec),
+    seek: (sec) => void safe('seek', () => player.seekTo(sec)?.catch?.(() => {})),
     isDownloaded,
     downloading,
     toggleDownload,
@@ -397,8 +442,18 @@ function Main() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={view === 'list' || dark ? 'light' : 'dark'} />
-      {view === 'player' && track ? <PlayerScreen app={app} /> : <ListScreen app={app} error={error} />}
-      <SleepSheet app={app} visible={sheet} />
+      <ErrorBoundary
+        key={screenKey}
+        t={t}
+        onReset={() => {
+          setSheet(false);
+          setView('list');
+          setScreenKey((k) => k + 1);
+        }}
+      >
+        {view === 'player' && track ? <PlayerScreen app={app} /> : <ListScreen app={app} error={error} />}
+        <SleepSheet app={app} visible={sheet} />
+      </ErrorBoundary>
     </View>
   );
 }

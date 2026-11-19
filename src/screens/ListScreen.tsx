@@ -64,6 +64,12 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
     [app.tracks, app.groups],
   );
 
+  // only redraw list rows when something they show changes (not on every progress tick)
+  const listExtra = useMemo(
+    () => ({ open, index: app.index, playing: app.playing, downloading: app.downloading, isDownloaded: app.isDownloaded, t }),
+    [open, app.index, app.playing, app.downloading, app.isDownloaded, t],
+  );
+
   const pct = app.duration ? Math.min(1, app.currentTime / app.duration) : 0;
 
   // ---------- pieces ----------
@@ -263,25 +269,35 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
     </View>
   );
 
-  const bottomPad = { paddingBottom: (app.track ? 100 : 24) + insets.bottom };
+  const padBottom = (app.track ? 100 : 24) + insets.bottom;
+  const bottomPad = { paddingBottom: padBottom };
 
-  let body;
-  if (error) body = empty(error);
-  else if (!app.tracks.length) body = <ActivityIndicator style={{ marginTop: 40 }} size="large" color={t.green} />;
-  else if (tab === 'Surahs')
-    body = (
+  // The surah list is rebuilt only when what it shows changes, not on every
+  // half-second progress update while audio plays.
+  const surahList = useMemo(
+    () => (
       <FlatList
         ref={listRef}
         data={filtered}
         keyExtractor={(g) => String(g.info.n)}
         renderItem={surahRow}
-        extraData={[open, app.index, app.playing, app.downloading, app.bulk, t]}
-        contentContainerStyle={[styles.listPad, bottomPad]}
+        extraData={listExtra}
+        contentContainerStyle={[styles.listPad, { paddingBottom: padBottom }]}
         keyboardShouldPersistTaps="handled"
         onScrollToIndexFailed={() => {}}
         ListEmptyComponent={empty('No surah matches your search.')}
+        initialNumToRender={14}
+        windowSize={7}
       />
-    );
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, listExtra, padBottom, app.groups],
+  );
+
+  let body;
+  if (error) body = empty(error);
+  else if (!app.tracks.length) body = <ActivityIndicator style={{ marginTop: 40 }} size="large" color={t.green} />;
+  else if (tab === 'Surahs') body = surahList;
   else if (tab === 'Juz')
     body = (
       <FlatList
