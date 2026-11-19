@@ -47,6 +47,40 @@ export async function saveProgress(trackId: string, position: number) {
   await AsyncStorage.setItem(KEY_PROGRESS, JSON.stringify(p));
 }
 
+// ---------- bookmarks and settings ----------
+const KEY_BOOKMARKS = 'bookmarks.v1';
+const KEY_SETTINGS = 'settings.v1';
+
+export type ThemeChoice = 'system' | 'light' | 'dark';
+export type Settings = { speed: number; theme: ThemeChoice };
+export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system' };
+
+export async function loadBookmarks(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_BOOKMARKS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveBookmarks(ids: string[]) {
+  await AsyncStorage.setItem(KEY_BOOKMARKS, JSON.stringify(ids));
+}
+
+export async function loadSettings(): Promise<Settings> {
+  try {
+    const raw = await AsyncStorage.getItem(KEY_SETTINGS);
+    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+export async function saveSettings(s: Settings) {
+  await AsyncStorage.setItem(KEY_SETTINGS, JSON.stringify(s));
+}
+
 // ---------- offline downloads ----------
 const audioDir = new Directory(Paths.document, 'audio');
 
