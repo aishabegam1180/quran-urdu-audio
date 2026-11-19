@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { RECITERS } from '../config';
 import { formatTime } from '../library';
 import { surahInfo } from '../surahs';
 import { FONTS } from '../theme';
@@ -17,15 +18,15 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
 
   const info = surahInfo(track.surah);
   const pct = app.duration ? Math.min(1, app.currentTime / app.duration) : 0;
-  const saved = app.bookmarks.includes(track.id);
+  const saved = app.isBookmarked(track.id);
   const next = app.index != null ? app.tracks[app.index + 1] : undefined;
   const speedText = `${app.speed}×`;
   const sleepText =
     app.sleep.kind === 'off'
-      ? 'Sleep timer'
+      ? 'Sleep'
       : app.sleep.kind === 'end'
-        ? 'Sleep · end of part'
-        : `Sleep · ${Math.ceil(app.sleepLeft / 60)} min`;
+        ? 'End of part'
+        : `${Math.ceil(app.sleepLeft / 60)} min`;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg, paddingTop: insets.top + 10, paddingBottom: insets.bottom + 18 }]}>
@@ -39,8 +40,8 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         </Pressable>
         <Text style={[styles.topLabel, { color: t.muted }]}>NOW PLAYING</Text>
         <Pressable
-          onPress={() => app.toggleBookmark(track.id)}
-          accessibilityLabel={saved ? 'Remove bookmark' : 'Bookmark this part'}
+          onPress={app.toggleBookmark}
+          accessibilityLabel={saved ? 'Remove bookmark' : 'Bookmark this moment'}
           style={[styles.roundBtn, { backgroundColor: t.surface, borderColor: t.line }]}
         >
           <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={t.goldText} />
@@ -56,7 +57,7 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
           {app.label(track)}
         </Text>
         <Text style={[styles.sub, { color: t.muted }]} numberOfLines={1}>
-          {[app.ayahText(track), 'Mishary Alafasy · Urdu'].filter(Boolean).join(' · ')}
+          {[app.ayahText(track), `${RECITERS} · Urdu`].filter(Boolean).join(' · ')}
         </Text>
       </View>
 
@@ -130,8 +131,12 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         >
           <Ionicons name="repeat" size={22} color={app.repeat ? t.chipOnText : t.goldText} />
           <Text style={[styles.chipText, { color: app.repeat ? t.chipOnText : t.muted }]}>
-            {app.repeat ? 'Repeat · on' : 'Repeat · off'}
+            {app.repeat ? 'Repeat on' : 'Repeat'}
           </Text>
+        </Pressable>
+        <Pressable onPress={() => app.openNoteEditor(null)} style={[styles.chip, { backgroundColor: t.surface, borderColor: t.line }]}>
+          <Ionicons name="create-outline" size={21} color={t.goldText} />
+          <Text style={[styles.chipText, { color: t.muted }]}>Note</Text>
         </Pressable>
       </View>
 
@@ -189,7 +194,7 @@ const styles = StyleSheet.create({
   ctrl: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
   ctrlNum: { position: 'absolute', bottom: 2, fontFamily: FONTS.bold, fontSize: 9 },
   play: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center', elevation: 8 },
-  chips: { marginTop: 24, flexDirection: 'row', gap: 10 },
+  chips: { marginTop: 24, flexDirection: 'row', gap: 8 },
   chip: { flex: 1, minHeight: 64, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 4 },
   chipBig: { fontFamily: FONTS.bold, fontSize: 16 },
   chipText: { fontFamily: FONTS.medium, fontSize: 11 },

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Quran Safar – Urdu Tarjuma",
     "slug": "quran-urdu-audio",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -42,6 +42,16 @@
           "imageWidth": 220,
           "resizeMode": "contain",
           "backgroundColor": "#0B2F23"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Quran Safar uses your location only on the Qibla screen, on your phone, to point towards the Kaaba. It is never sent anywhere.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
         }
       ]
     ]

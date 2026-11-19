@@ -4,7 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { RECITERS } from '../config';
 import { Track, formatTime } from '../library';
+import { SavedList } from './SavedScreen';
 import { JUZ, searchKey } from '../surahs';
 import { FONTS } from '../theme';
 import { AppCtx, Part, SurahGroup } from '../types';
@@ -45,23 +47,14 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
     );
   }, [query, app.groups]);
 
-  const saved = useMemo(
-    () => app.tracks.map((tr, i) => ({ track: tr, i })).filter((p) => app.bookmarks.includes(p.track.id)),
-    [app.tracks, app.bookmarks],
-  );
-
   const juzRows = useMemo(
     () =>
       JUZ.map((j) => {
-        const i = app.tracks.findIndex((tr) => {
-          if (tr.surah !== j.surah) return false;
-          const m = tr.ayahs.match(/(\d+)\s*-\s*(\d+)/);
-          return !m || (j.ayah >= +m[1] && j.ayah <= +m[2]);
-        });
+        const i = app.trackForAyah(j.surah, j.ayah);
         const g = app.groups.find((x) => x.info.n === j.surah);
         return { ...j, i, surahName: g?.info.name ?? `Surah ${j.surah}` };
       }),
-    [app.tracks, app.groups],
+    [app.tracks, app.groups], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // only redraw list rows when something they show changes (not on every progress tick)
@@ -82,8 +75,8 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
       <View style={styles.headerRow}>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={[styles.headerAr, { color: t.gold }]}>القرآن الكريم</Text>
-          <Text style={[styles.h1, { color: t.headerText }]}>Holy Quran</Text>
-          <Text style={[styles.h2, { color: t.headerMuted }]}>Arabic recitation with Urdu meaning</Text>
+          <Text style={[styles.h1, { color: t.headerText }]}>Quran Safar</Text>
+          <Text style={[styles.h2, { color: t.headerMuted }]}>Urdu Tarjuma · {RECITERS}</Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
@@ -107,8 +100,36 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
               <Ionicons name="download-outline" size={20} color={t.headerText} />
             )}
           </Pressable>
+          <Pressable
+            onPress={app.openMenu}
+            accessibilityLabel="More"
+            style={[styles.circleBtn, { borderColor: t.headerLine, backgroundColor: t.card }]}
+          >
+            <Ionicons name="menu" size={21} color={t.headerText} />
+          </Pressable>
         </View>
       </View>
+
+      {!!app.hijriText && (
+        <Pressable
+          onPress={app.adjustHijri}
+          accessibilityLabel={`${app.hijriText}, ${app.gregorianText}. Tap to adjust the Islamic date.`}
+          style={[styles.dateRow, { borderColor: t.headerLine }]}
+        >
+          <Ionicons name="moon-outline" size={18} color={t.gold} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.dateMain, { color: t.headerText }]} numberOfLines={1}>
+              {app.hijriText}
+            </Text>
+            <Text style={[styles.dateSub, { color: t.headerMuted }]} numberOfLines={1}>
+              {app.gregorianText}
+            </Text>
+          </View>
+          <Text style={[styles.dateAr, { color: t.gold }]} numberOfLines={1}>
+            {app.hijriArabic}
+          </Text>
+        </Pressable>
+      )}
 
       {app.track && (
         <Pressable
@@ -318,17 +339,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         )}
       />
     );
-  else
-    body = saved.length ? (
-      <FlatList
-        data={saved}
-        keyExtractor={(p) => p.track.id}
-        contentContainerStyle={[styles.listPad, bottomPad]}
-        renderItem={({ item }) => partRow(item, true)}
-      />
-    ) : (
-      empty('Tap the bookmark on the Now playing screen to save surahs you come back to.')
-    );
+  else body = <SavedList app={app} bottomPad={padBottom} />;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
@@ -348,7 +359,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
             <Text style={[styles.miniSub, { color: t.miniMuted }]} numberOfLines={1}>
               {app.sleep.kind !== 'off'
                 ? `Sleep timer · ${app.sleep.kind === 'end' ? 'end of part' : `${Math.ceil(app.sleepLeft / 60)} min`}`
-                : 'Mishary Alafasy · Urdu'}
+                : `${RECITERS} · Urdu`}
             </Text>
           </View>
           <Pressable
@@ -371,6 +382,10 @@ const styles = StyleSheet.create({
   headerAr: { fontFamily: FONTS.arabic, fontSize: 22, lineHeight: 32 },
   h1: { fontFamily: FONTS.display, fontSize: 30, lineHeight: 34 },
   h2: { fontFamily: FONTS.body, fontSize: 13 },
+  dateRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1 },
+  dateMain: { fontFamily: FONTS.semibold, fontSize: 14 },
+  dateSub: { fontFamily: FONTS.body, fontSize: 12 },
+  dateAr: { fontFamily: FONTS.arabic, fontSize: 17, lineHeight: 26, maxWidth: 130 },
   circleBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   bulkText: { fontFamily: FONTS.bold, fontSize: 11 },
   continueCard: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, borderWidth: 1 },

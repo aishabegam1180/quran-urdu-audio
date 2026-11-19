@@ -1,12 +1,18 @@
 # Quran Safar – Urdu Tarjuma
 
-An Android app for listening to the Holy Quran (Arabic recitation by Mishary Alafasy, each ayah followed by its Urdu meaning) while travelling.
+An Android app for listening to the Holy Quran — recitation by Shaykh Abdur Rahman Al-Sudais and Shaykh Saud Al-Shuraim, each ayah followed by the Urdu translation of Fateh Muhammad Jalandhari. Free, with no ads and no sign-up.
 
 - Play / pause / stop, skip 10 s, previous / next surah
 - Keeps playing with the screen locked; controls on the lock screen, Bluetooth and car audio
 - Remembers where you stopped and continues from there when you open the app again (saved on each phone, so every user has their own place)
 - Continues automatically to the next surah
 - Download surahs (or all of them) to listen offline
+- Search, browse by Juz, bookmarks with the exact time, notes, sleep timer, speed, repeat, dark mode
+- Islamic (Umm al-Qura) date, Qibla compass, 55 duas from the Quran with Urdu translation, feedback by email
+
+## Credits
+- Duas: Arabic text from the Tanzil Project (https://tanzil.net), used unchanged; Urdu translation by Fateh Muhammad Jalandhari (Tanzil). The list of dua ayahs follows quranwbw.com/duas.
+- Islamic date: Umm al-Qura calendar data from the hijri-converter project.
 
 ## Install on your phone
 Open this link on your Android phone, download the APK and install it (allow "Install unknown apps" for your browser when asked):

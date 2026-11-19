@@ -1,4 +1,4 @@
-import { Track } from './library';
+import { Bookmark, Note, Track } from './library';
 import { SurahInfo } from './surahs';
 import { Theme } from './theme';
 
@@ -9,6 +9,8 @@ export type Sleep =
   | { kind: 'off' }
   | { kind: 'minutes'; minutes: number; endsAt: number }
   | { kind: 'end' };
+
+export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about';
 
 /** Everything the screens need from the app: state plus actions. */
 export type AppCtx = {
@@ -24,7 +26,10 @@ export type AppCtx = {
   label: (t: Track) => string;
   partLabel: (t: Track) => string;
   ayahText: (t: Track) => string;
+  trackById: (id: string) => { track: Track; i: number } | null;
+  trackForAyah: (surah: number, ayah: number) => number;
   pick: (i: number) => void;
+  resume: (trackId: string, position: number) => void;
   playPause: () => void;
   skip: (delta: number) => void;
   go: (delta: number) => void;
@@ -34,8 +39,24 @@ export type AppCtx = {
   toggleDownload: (t: Track) => void;
   downloadAll: () => void;
   bulk: { done: number; total: number } | null;
-  bookmarks: string[];
-  toggleBookmark: (id: string) => void;
+  // bookmarks (with the exact time)
+  bookmarks: Bookmark[];
+  isBookmarked: (trackId: string) => boolean;
+  toggleBookmark: () => void;
+  removeBookmark: (trackId: string) => void;
+  // notes
+  notes: Note[];
+  openNoteEditor: (note: Note | null) => void;
+  deleteNote: (id: string) => void;
+  // duas
+  duaFavs: string[];
+  toggleDuaFav: (id: string) => void;
+  // dates
+  gregorianText: string;
+  hijriText: string;
+  hijriArabic: string;
+  adjustHijri: () => void;
+  // playback extras
   speed: number;
   setSpeed: (s: number) => void;
   toggleTheme: () => void;
@@ -44,8 +65,12 @@ export type AppCtx = {
   setSleep: (choice: 'off' | 'end' | number) => void;
   repeat: boolean;
   toggleRepeat: () => void;
+  // navigation
+  view: View;
+  navigate: (v: View) => void;
   openPlayer: () => void;
   closePlayer: () => void;
   openSheet: () => void;
   closeSheet: () => void;
+  openMenu: () => void;
 };

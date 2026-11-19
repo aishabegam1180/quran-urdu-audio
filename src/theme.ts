@@ -116,6 +116,7 @@ export const DARK: Theme = {
 
 export const FONTS = {
   arabic: 'Amiri_400Regular',
+  urdu: 'NotoNastaliqUrdu_400Regular',
   display: 'Marcellus_400Regular',
   body: 'Inter_400Regular',
   medium: 'Inter_500Medium',

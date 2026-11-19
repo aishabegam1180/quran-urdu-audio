@@ -1,7 +1,8 @@
 // Decorative pieces of the design: the eight-point star badge, the header
 // pattern and the gold medallion on the Now playing screen.
-import { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import React, { memo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { FONTS, Theme } from './theme';
 
 function Star({ size, color, width, opacity = 1 }: { size: number; color: string; width: number; opacity?: number }) {
@@ -62,6 +63,10 @@ export function Medallion({ t, ar, surah }: { t: Theme; ar: string; surah: numbe
 }
 
 const styles = StyleSheet.create({
+  sh: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  shBack: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  shTitle: { fontFamily: FONTS.display, fontSize: 24, lineHeight: 30 },
+  shSub: { fontFamily: FONTS.arabic, fontSize: 16, lineHeight: 24 },
   badge: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   badgeText: { fontFamily: FONTS.bold, fontSize: 12 },
   tile: { position: 'absolute', width: TILE, height: TILE, alignItems: 'center', justifyContent: 'center' },
@@ -73,3 +78,37 @@ const styles = StyleSheet.create({
   medalAr: { fontFamily: FONTS.arabic, fontSize: 40, lineHeight: 56, maxWidth: 120, textAlign: 'center' },
   medalSub: { fontFamily: FONTS.semibold, fontSize: 11, letterSpacing: 1.3 },
 });
+
+/** Top bar used by the menu screens: back button and title. */
+export function ScreenHeader({
+  t,
+  title,
+  subtitle,
+  onBack,
+  right,
+}: {
+  t: Theme;
+  title: string;
+  subtitle?: string;
+  onBack: () => void;
+  right?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.sh}>
+      <Pressable
+        onPress={onBack}
+        accessibilityLabel="Back"
+        style={[styles.shBack, { backgroundColor: t.surface, borderColor: t.line }]}
+      >
+        <Ionicons name="chevron-back" size={22} color={t.text} />
+      </Pressable>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.shTitle, { color: t.text }]} numberOfLines={1}>
+          {title}
+        </Text>
+        {!!subtitle && <Text style={[styles.shSub, { color: t.goldText }]}>{subtitle}</Text>}
+      </View>
+      {right}
+    </View>
+  );
+}

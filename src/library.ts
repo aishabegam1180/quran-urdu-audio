@@ -47,25 +47,56 @@ export async function saveProgress(trackId: string, position: number) {
   await AsyncStorage.setItem(KEY_PROGRESS, JSON.stringify(p));
 }
 
-// ---------- bookmarks and settings ----------
-const KEY_BOOKMARKS = 'bookmarks.v1';
+// ---------- bookmarks, notes, favourites and settings ----------
+const KEY_BOOKMARKS_OLD = 'bookmarks.v1'; // list of track ids (before bookmarks had a time)
+const KEY_BOOKMARKS = 'bookmarks.v2';
+const KEY_NOTES = 'notes.v1';
+const KEY_DUA_FAVS = 'duaFavs.v1';
 const KEY_SETTINGS = 'settings.v1';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
-export type Settings = { speed: number; theme: ThemeChoice };
-export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system' };
+export type Settings = { speed: number; theme: ThemeChoice; hijriOffset: number };
+export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system', hijriOffset: 0 };
 
-export async function loadBookmarks(): Promise<string[]> {
+export type Bookmark = { trackId: string; position: number; savedAt: number };
+export type Note = {
+  id: string;
+  text: string;
+  trackId: string | null; // the part it is linked to, if any
+  position: number; // seconds into that part
+  createdAt: number;
+  updatedAt: number;
+};
+
+async function readJson<T>(key: string, fallback: T): Promise<T> {
   try {
-    const raw = await AsyncStorage.getItem(KEY_BOOKMARKS);
-    return raw ? JSON.parse(raw) : [];
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
 
-export async function saveBookmarks(ids: string[]) {
-  await AsyncStorage.setItem(KEY_BOOKMARKS, JSON.stringify(ids));
+/** Bookmarks with the exact time. Older bookmarks (ids only) are kept, starting at 0:00. */
+export async function loadBookmarks(): Promise<Bookmark[]> {
+  const v2 = await readJson<Bookmark[] | null>(KEY_BOOKMARKS, null);
+  if (v2) return v2;
+  const old = await readJson<string[]>(KEY_BOOKMARKS_OLD, []);
+  return old.map((trackId) => ({ trackId, position: 0, savedAt: Date.now() }));
+}
+
+export async function saveBookmarks(list: Bookmark[]) {
+  await AsyncStorage.setItem(KEY_BOOKMARKS, JSON.stringify(list));
+}
+
+export const loadNotes = () => readJson<Note[]>(KEY_NOTES, []);
+export async function saveNotes(list: Note[]) {
+  await AsyncStorage.setItem(KEY_NOTES, JSON.stringify(list));
+}
+
+export const loadDuaFavs = () => readJson<string[]>(KEY_DUA_FAVS, []);
+export async function saveDuaFavs(ids: string[]) {
+  await AsyncStorage.setItem(KEY_DUA_FAVS, JSON.stringify(ids));
 }
 
 export async function loadSettings(): Promise<Settings> {

@@ -4,6 +4,7 @@ import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
 import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { Marcellus_400Regular } from '@expo-google-fonts/marcellus/400Regular';
+import { NotoNastaliqUrdu_400Regular } from '@expo-google-fonts/noto-nastaliq-urdu/400Regular';
 import {
   requestNotificationPermissionsAsync,
   setAudioModeAsync,
@@ -16,30 +17,50 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, BackHandler, Share, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
+  Bookmark,
   DEFAULT_SETTINGS,
+  Note,
   Settings,
   Track,
   download,
   formatMB,
   isDownloaded as fileExists,
   loadBookmarks,
+  loadDuaFavs,
+  loadNotes,
   loadProgress,
   loadSettings,
   loadTracks,
   removeDownload,
   saveBookmarks,
+  saveDuaFavs,
+  saveNotes,
   saveProgress,
   saveSettings,
   sourceFor,
 } from './src/library';
 import { installCrashHandler, recordError, safe, takeLastCrash } from './src/crash';
 import { ErrorBoundary } from './src/ErrorBoundary';
+import { RECITERS } from './src/config';
+import { arabicNumber } from './src/duas';
+import { HIJRI_MONTHS, HIJRI_MONTHS_AR, toHijri } from './src/hijri';
+import { AboutScreen } from './src/screens/AboutScreen';
+import { DuasScreen } from './src/screens/DuasScreen';
+import { FeedbackScreen } from './src/screens/FeedbackScreen';
 import { ListScreen } from './src/screens/ListScreen';
+import { MoreSheet } from './src/screens/MoreSheet';
+import { NoteDraft, NoteEditor } from './src/screens/NoteEditor';
+import { NotesScreen } from './src/screens/NotesScreen';
+import { QiblaScreen } from './src/screens/QiblaScreen';
+import { SavedScreen } from './src/screens/SavedScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
 import { SleepSheet } from './src/screens/SleepSheet';
 import { SURAHS, surahInfo } from './src/surahs';
 import { DARK, LIGHT } from './src/theme';
-import { AppCtx, Sleep, SurahGroup } from './src/types';
+import { AppCtx, Sleep, SurahGroup, View as Screen } from './src/types';
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const SKIP_SECONDS = 10;
 const FADE_SECONDS = 10;
@@ -54,6 +75,7 @@ export default function App() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    NotoNastaliqUrdu_400Regular,
   });
   return (
     <SafeAreaProvider>
@@ -80,10 +102,15 @@ function Main() {
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [downloaded, setDownloaded] = useState<Set<string>>(new Set());
   const [screenKey, setScreenKey] = useState(0);
-  const [bookmarks, setBookmarks] = useState<string[]>([]);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [duaFavs, setDuaFavs] = useState<string[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [view, setView] = useState<'list' | 'player'>('list');
+  const [view, setView] = useState<Screen>('list');
   const [sheet, setSheet] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [noteDraft, setNoteDraft] = useState<NoteDraft>(null);
+  const [today, setToday] = useState(() => new Date());
   const [sleep, setSleepState] = useState<Sleep>({ kind: 'off' });
   const [sleepLeft, setSleepLeft] = useState(0);
   const [repeat, setRepeat] = useState(false);
@@ -138,7 +165,7 @@ function Main() {
       safe('replace', () => player.replace(sourceFor(tr)));
       safe('volume', () => (player.volume = 1));
       applySpeed();
-      const meta = { title: label(tr), artist: 'Mishary Alafasy · Urdu', albumTitle: 'Quran Safar' };
+      const meta = { title: label(tr), artist: `${RECITERS} · Urdu`, albumTitle: 'Quran Safar' };
       // register lock-screen controls once; afterwards only change the title
       if (lockScreenOn.current) safe('lockscreen-update', () => player.updateLockScreenMetadata(meta));
       else
@@ -166,10 +193,12 @@ function Main() {
         shouldPlayInBackground: true,
         interruptionMode: 'doNotMix',
       });
-      const [s, b] = await Promise.all([loadSettings(), loadBookmarks()]);
+      const [s, b, n, f] = await Promise.all([loadSettings(), loadBookmarks(), loadNotes(), loadDuaFavs()]);
       setSettings(s);
       speedRef.current = s.speed;
       setBookmarks(b);
+      setNotes(n);
+      setDuaFavs(f);
       takeLastCrash().then((c) => {
         if (!c) return;
         const details = `Quran Safar problem report\n${c.at}\n${c.where}: ${c.message}\n${c.stack}`;
@@ -272,15 +301,23 @@ function Main() {
     }
   };
 
-  // ---- Android back button closes the sheet, then the player ----
+  // ---- Android back button: close sheets first, then go back to the list ----
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (menu) return setMenu(false), true;
+      if (noteDraft) return setNoteDraft(null), true;
       if (sheet) return setSheet(false), true;
-      if (view === 'player') return setView('list'), true;
+      if (view !== 'list') return setView('list'), true;
       return false;
     });
     return () => sub.remove();
-  }, [sheet, view]);
+  }, [menu, noteDraft, sheet, view]);
+
+  // ---- keep the date fresh when the app comes back after midnight ----
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && setToday(new Date()));
+    return () => sub.remove();
+  }, []);
 
   // ---- controls ----
   const ensureNotifPermission = () => {
@@ -379,13 +416,89 @@ function Main() {
     ]);
   };
 
-  // ---- bookmarks and settings ----
-  const toggleBookmark = (id: string) =>
-    setBookmarks((b) => {
-      const next = b.includes(id) ? b.filter((x) => x !== id) : [...b, id];
-      saveBookmarks(next);
+  // ---- lookups ----
+  const indexById = useMemo(() => {
+    const m: Record<string, number> = {};
+    tracks.forEach((tr, i) => (m[tr.id] = i));
+    return m;
+  }, [tracks]);
+  const trackById = (id: string) => (id in indexById ? { track: tracks[indexById[id]], i: indexById[id] } : null);
+  const trackForAyah = (surah: number, ayah: number) =>
+    tracks.findIndex((tr) => {
+      if (tr.surah !== surah) return false;
+      const m = tr.ayahs.match(/(\d+)\s*-\s*(\d+)/);
+      return !m || (ayah >= +m[1] && ayah <= +m[2]);
+    });
+
+  const resume = (trackId: string, position: number) => {
+    const i = indexById[trackId];
+    if (i == null) return;
+    ensureNotifPermission();
+    if (i === index && status.isLoaded) {
+      safe('seek', () => player.seekTo(position)?.catch?.(() => {}));
+      safe('play', () => player.play());
+    } else loadTrack(tracks, i, position, true);
+    setView('player');
+  };
+
+  // ---- bookmarks (with the exact time) ----
+  const persistBookmarks = (next: Bookmark[]) => {
+    setBookmarks(next);
+    saveBookmarks(next).catch(() => {});
+  };
+  const isBookmarked = (id: string) => bookmarks.some((b) => b.trackId === id);
+  const toggleBookmark = () => {
+    if (!track) return;
+    if (isBookmarked(track.id)) persistBookmarks(bookmarks.filter((b) => b.trackId !== track.id));
+    else persistBookmarks([...bookmarks, { trackId: track.id, position: Math.floor(status.currentTime || 0), savedAt: Date.now() }]);
+  };
+  const removeBookmark = (id: string) => persistBookmarks(bookmarks.filter((b) => b.trackId !== id));
+
+  // ---- notes ----
+  const persistNotes = (next: Note[]) => {
+    setNotes(next);
+    saveNotes(next).catch(() => {});
+  };
+  const saveNote = (text: string, link: { trackId: string; position: number } | null, existing: Note | null) => {
+    const now = Date.now();
+    if (existing)
+      persistNotes(notes.map((n) => (n.id === existing.id ? { ...n, text, trackId: link?.trackId ?? null, position: link?.position ?? 0, updatedAt: now } : n)));
+    else
+      persistNotes([
+        ...notes,
+        { id: `${now}-${Math.random().toString(36).slice(2, 7)}`, text, trackId: link?.trackId ?? null, position: link?.position ?? 0, createdAt: now, updatedAt: now },
+      ]);
+    setNoteDraft(null);
+  };
+  const deleteNote = (id: string) => persistNotes(notes.filter((n) => n.id !== id));
+
+  // ---- dua favourites ----
+  const toggleDuaFav = (id: string) =>
+    setDuaFavs((f) => {
+      const next = f.includes(id) ? f.filter((x) => x !== id) : [...f, id];
+      saveDuaFavs(next).catch(() => {});
       return next;
     });
+
+  // ---- dates ----
+  const hijri = toHijri(today, settings.hijriOffset);
+  const gregorianText = `${DAYS[today.getDay()]}, ${today.getDate()} ${MONTHS[today.getMonth()]} ${today.getFullYear()}`;
+  const hijriText = hijri ? `${hijri.day} ${HIJRI_MONTHS[hijri.month - 1]} ${hijri.year} AH` : '';
+  const hijriArabic = hijri ? `${arabicNumber(hijri.day)} ${HIJRI_MONTHS_AR[hijri.month - 1]}` : '';
+  const adjustHijri = () => {
+    const o = settings.hijriOffset;
+    const setOffset = (v: number) => updateSettings({ hijriOffset: Math.max(-2, Math.min(2, v)) });
+    Alert.alert(
+      'Adjust Islamic date',
+      `The Islamic date can differ by a day where you live because of moon sighting.\n\nCurrent adjustment: ${o > 0 ? '+' : ''}${o} day${Math.abs(o) === 1 ? '' : 's'}`,
+      [
+        { text: '−1 day', onPress: () => setOffset(o - 1) },
+        { text: 'Reset', onPress: () => setOffset(0) },
+        { text: '+1 day', onPress: () => setOffset(o + 1) },
+      ],
+      { cancelable: true },
+    );
+  };
 
   const updateSettings = (patch: Partial<Settings>) =>
     setSettings((s) => {
@@ -423,8 +536,22 @@ function Main() {
     toggleDownload,
     downloadAll,
     bulk,
+    trackById,
+    trackForAyah,
+    resume,
     bookmarks,
+    isBookmarked,
     toggleBookmark,
+    removeBookmark,
+    notes,
+    openNoteEditor: (note) => setNoteDraft({ note }),
+    deleteNote,
+    duaFavs,
+    toggleDuaFav,
+    gregorianText,
+    hijriText,
+    hijriArabic,
+    adjustHijri,
     speed: settings.speed,
     setSpeed,
     toggleTheme: () => updateSettings({ theme: dark ? 'light' : 'dark' }),
@@ -433,6 +560,9 @@ function Main() {
     setSleep,
     repeat,
     toggleRepeat: () => setRepeat((r) => !r),
+    view,
+    navigate: (v) => setView(v),
+    openMenu: () => setMenu(true),
     openPlayer: () => setView('player'),
     closePlayer: () => setView('list'),
     openSheet: () => setSheet(true),
@@ -441,7 +571,7 @@ function Main() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <StatusBar style={view === 'list' || dark ? 'light' : 'dark'} />
+      <StatusBar style={view === 'list' || view === 'about' || dark ? 'light' : 'dark'} />
       <ErrorBoundary
         key={screenKey}
         t={t}
@@ -451,8 +581,26 @@ function Main() {
           setScreenKey((k) => k + 1);
         }}
       >
-        {view === 'player' && track ? <PlayerScreen app={app} /> : <ListScreen app={app} error={error} />}
+        {view === 'player' && track ? (
+          <PlayerScreen app={app} />
+        ) : view === 'qibla' ? (
+          <QiblaScreen app={app} />
+        ) : view === 'notes' ? (
+          <NotesScreen app={app} />
+        ) : view === 'saved' ? (
+          <SavedScreen app={app} />
+        ) : view === 'duas' ? (
+          <DuasScreen app={app} />
+        ) : view === 'feedback' ? (
+          <FeedbackScreen app={app} />
+        ) : view === 'about' ? (
+          <AboutScreen app={app} />
+        ) : (
+          <ListScreen app={app} error={error} />
+        )}
         <SleepSheet app={app} visible={sheet} />
+        <MoreSheet app={app} visible={menu} onClose={() => setMenu(false)} />
+        <NoteEditor app={app} draft={noteDraft} onClose={() => setNoteDraft(null)} onSave={saveNote} />
       </ErrorBoundary>
     </View>
   );

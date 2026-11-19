@@ -1,0 +1,56 @@
+// The ☰ More menu: Qibla, Duas, Notes, Saved, Feedback, About.
+import { Ionicons } from '@expo/vector-icons';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FONTS } from '../theme';
+import { AppCtx, View as Screen } from '../types';
+
+const ITEMS: { view: Screen; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { view: 'qibla', label: 'Qibla direction', sub: 'Compass pointing to the Kaaba', icon: 'compass-outline' },
+  { view: 'duas', label: 'Duas from the Quran', sub: '55 duas with Urdu translation', icon: 'hand-left-outline' },
+  { view: 'notes', label: 'Notes', sub: 'Your reflections on surahs', icon: 'document-text-outline' },
+  { view: 'saved', label: 'Saved', sub: 'Bookmarks with the exact time', icon: 'bookmark-outline' },
+  { view: 'feedback', label: 'Send feedback', sub: 'Suggestions or problems', icon: 'chatbox-ellipses-outline' },
+  { view: 'about', label: 'About Quran Safar', sub: 'Our mission and credits', icon: 'information-circle-outline' },
+];
+
+export function MoreSheet({ app, visible, onClose }: { app: AppCtx; visible: boolean; onClose: () => void }) {
+  const { t } = app;
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: t.scrim }]} onPress={onClose} accessibilityLabel="Close menu" />
+      <View style={[styles.sheet, { backgroundColor: t.sheet, paddingBottom: insets.bottom + 18 }]}>
+        <View style={[styles.handle, { backgroundColor: t.line }]} />
+        {ITEMS.map((it) => (
+          <Pressable
+            key={it.view}
+            onPress={() => {
+              onClose();
+              app.navigate(it.view);
+            }}
+            style={({ pressed }) => [styles.row, pressed && { backgroundColor: t.activeBg }]}
+          >
+            <View style={[styles.iconBox, { backgroundColor: t.activeBg }]}>
+              <Ionicons name={it.icon} size={21} color={t.green} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[styles.label, { color: t.text }]}>{it.label}</Text>
+              <Text style={[styles.sub, { color: t.muted }]}>{it.sub}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={t.muted} />
+          </Pressable>
+        ))}
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14, paddingTop: 12, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 2 },
+  handle: { width: 40, height: 5, borderRadius: 3, alignSelf: 'center', marginBottom: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 62, paddingHorizontal: 10, borderRadius: 14 },
+  iconBox: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  label: { fontFamily: FONTS.semibold, fontSize: 15 },
+  sub: { fontFamily: FONTS.body, fontSize: 12 },
+});
