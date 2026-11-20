@@ -21,19 +21,31 @@ export type Progress = { trackId: string; position: number; savedAt: number };
 const KEY_MANIFEST = 'manifest.v1';
 const KEY_PROGRESS = 'progress.v1';
 
-/** Loads the track list from the internet, falling back to the last saved copy (offline). */
-export async function loadTracks(): Promise<Track[]> {
+/** The surah list saved on the phone from last time (instant, works offline). */
+export async function loadCachedTracks(): Promise<Track[] | null> {
   try {
-    const res = await fetch(AUDIO_BASE + 'manifest.json', { cache: 'no-store' });
+    const cached = await AsyncStorage.getItem(KEY_MANIFEST);
+    const list = cached ? (JSON.parse(cached) as Track[]) : null;
+    return list && list.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Fetches the latest surah list from the internet, giving up after `timeoutMs`, and saves it. */
+export async function fetchTracks(timeoutMs: number): Promise<Track[]> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(AUDIO_BASE + 'manifest.json', { cache: 'no-store', signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const tracks: Track[] = data.tracks;
+    if (!Array.isArray(tracks) || !tracks.length) throw new Error('empty list');
     await AsyncStorage.setItem(KEY_MANIFEST, JSON.stringify(tracks));
     return tracks;
-  } catch (err) {
-    const cached = await AsyncStorage.getItem(KEY_MANIFEST);
-    if (cached) return JSON.parse(cached);
-    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

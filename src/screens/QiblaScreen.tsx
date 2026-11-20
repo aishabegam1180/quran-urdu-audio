@@ -3,9 +3,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { recordError } from '../crash';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
 import { ScreenHeader } from '../ui';
@@ -26,6 +25,7 @@ function qiblaFrom(lat: number, lon: number) {
 
 type State =
   | { kind: 'loading' }
+  | { kind: 'off' } // the phone's location is switched off
   | { kind: 'denied'; canAsk: boolean }
   | { kind: 'error' }
   | { kind: 'ready'; bearing: number; km: number };
@@ -47,15 +47,32 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     (async () => {
       try {
+        // 1. location switched off? ask Android to show its own "Turn on location" prompt
+        if (!(await Location.hasServicesEnabledAsync())) {
+          try {
+            await Location.enableNetworkProviderAsync();
+          } catch {
+            // the person said no to the prompt
+          }
+          if (cancelled) return;
+          if (!(await Location.hasServicesEnabledAsync())) return setState({ kind: 'off' });
+        }
+        // 2. permission for this app
         const perm = await Location.requestForegroundPermissionsAsync();
         if (cancelled) return;
         if (perm.status !== 'granted') return setState({ kind: 'denied', canAsk: perm.canAskAgain });
+        // 3. where are we (give up after 15 s rather than spin forever)
         const pos =
           (await Location.getLastKnownPositionAsync({ maxAge: 6 * 3600_000 })) ??
-          (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+          (await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+          ]));
         if (cancelled) return;
+        if (!pos) return setState({ kind: 'error' });
         setState({ kind: 'ready', ...qiblaFrom(pos.coords.latitude, pos.coords.longitude) });
-        timer = setTimeout(() => !cancelled && setNoCompass((n) => n || true), 4000);
+        // 4. compass
+        timer = setTimeout(() => !cancelled && setNoCompass(true), 4000);
         sub = await Location.watchHeadingAsync((h) => {
           const v = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (timer) clearTimeout(timer);
@@ -64,8 +81,8 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
           setLowAccuracy(h.accuracy != null && h.accuracy < 2);
         });
         if (cancelled) sub.remove();
-      } catch (e) {
-        recordError('qibla', e);
+      } catch {
+        // location problems are normal (switched off, indoors, no signal): show a message, never an error report
         if (!cancelled) setState({ kind: 'error' });
       }
     })();
@@ -76,6 +93,25 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
     };
   }, [attempt]);
 
+  // came back from the app's settings page (permission was blocked)? try again automatically.
+  // Only in that case: Android's own pop-ups also pause the app, and retrying after those would loop.
+  const needsRetry = state.kind === 'denied' && !state.canAsk;
+  useEffect(() => {
+    if (!needsRetry) return;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') {
+        setState({ kind: 'loading' });
+        setAttempt((a) => a + 1);
+      }
+    });
+    return () => sub.remove();
+  }, [needsRetry]);
+
+  const retry = () => {
+    setState({ kind: 'loading' });
+    setAttempt((a) => a + 1);
+  };
+
   let body: React.ReactNode;
   if (state.kind === 'loading') {
     body = (
@@ -84,27 +120,36 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
         <Text style={[styles.p, { color: t.muted }]}>Finding your location…</Text>
       </View>
     );
-  } else if (state.kind === 'denied' || state.kind === 'error') {
+  } else if (state.kind === 'off' || state.kind === 'denied' || state.kind === 'error') {
+    const title =
+      state.kind === 'off'
+        ? 'Location is off'
+        : state.kind === 'denied'
+          ? 'Location is needed for Qibla'
+          : 'Could not find your location';
+    const extra =
+      state.kind === 'off'
+        ? ' Please turn on location to see the Qibla direction.'
+        : state.kind === 'error'
+          ? ' If you are indoors, move near a window and try again.'
+          : '';
+    const openSettings = state.kind === 'denied' && !state.canAsk;
     body = (
       <View style={styles.center}>
         <Ionicons name="location-outline" size={40} color={t.goldText} />
-        <Text style={[styles.h, { color: t.text }]}>
-          {state.kind === 'denied' ? 'Location is needed for Qibla' : 'Could not find your location'}
-        </Text>
+        <Text style={[styles.h, { color: t.text }]}>{title}</Text>
         <Text style={[styles.p, { color: t.muted }]}>
-          Your location is used only on this phone to work out the direction of the Kaaba. It is never sent anywhere.
-          {state.kind === 'error' ? ' Please turn on Location in your phone settings and try again.' : ''}
+          Your location is used only on this phone to work out the direction of the Kaaba. It is never sent anywhere.{extra}
         </Text>
-        <Pressable
-          onPress={() =>
-            state.kind === 'denied' && !state.canAsk ? Linking.openSettings() : (setState({ kind: 'loading' }), setAttempt((a) => a + 1))
-          }
-          style={[styles.btn, { backgroundColor: t.playBg }]}
-        >
+        <Pressable onPress={() => (openSettings ? Linking.openSettings() : retry())} style={[styles.btn, { backgroundColor: t.playBg }]}>
           <Text style={[styles.btnText, { color: t.playIcon }]}>
-            {state.kind === 'denied' && !state.canAsk ? 'Open settings' : 'Try again'}
+            {state.kind === 'off' ? 'Turn on location' : openSettings ? 'Open settings' : 'Try again'}
           </Text>
         </Pressable>
+        <Text style={[styles.p, { color: t.muted }]}>
+          Qibla is {''}
+          <Text style={{ fontFamily: FONTS.semibold }}>the only part of the app</Text> that uses location. Everything else works with it off.
+        </Text>
       </View>
     );
   } else {

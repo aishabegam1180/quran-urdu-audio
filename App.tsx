@@ -12,6 +12,7 @@ import {
   useAudioPlayerStatus,
 } from 'expo-audio';
 import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, BackHandler, Share, useColorScheme, View } from 'react-native';
@@ -30,7 +31,8 @@ import {
   loadNotes,
   loadProgress,
   loadSettings,
-  loadTracks,
+  fetchTracks,
+  loadCachedTracks,
   removeDownload,
   saveBookmarks,
   saveDuaFavs,
@@ -66,9 +68,10 @@ const SKIP_SECONDS = 10;
 const FADE_SECONDS = 10;
 
 installCrashHandler();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsDone, fontError] = useFonts({
     Amiri_400Regular,
     Marcellus_400Regular,
     Inter_400Regular,
@@ -77,6 +80,11 @@ export default function App() {
     Inter_700Bold,
     NotoNastaliqUrdu_400Regular,
   });
+  // if a font ever fails to load, carry on with the phone's own font rather than waiting forever
+  const fontsLoaded = fontsDone || !!fontError;
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
   return (
     <SafeAreaProvider>
       {fontsLoaded ? (
@@ -185,22 +193,70 @@ function Main() {
     [player, label, applySpeed],
   );
 
-  // ---- startup: audio mode, saved settings, track list, last position ----
+  // ---- startup: show the saved surah list at once, refresh it quietly in the background ----
+  const tracksRef = useRef<Track[]>([]);
+  const indexRef = useRef<number | null>(null);
+  tracksRef.current = tracks;
+  indexRef.current = index;
+
   useEffect(() => {
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'doNotMix',
+    }).catch((e) => recordError('audio-mode', e));
+
+    const showList = async (list: Track[]) => {
+      setTracks(list);
+      setError(null);
+      setDownloaded(new Set(list.filter((x) => fileExists(x)).map((x) => x.id)));
+      const p = await loadProgress();
+      const i = p ? list.findIndex((x) => x.id === p.trackId) : -1;
+      if (p && i >= 0) loadTrack(list, i, p.position, false); // ready to continue; one tap on Play
+    };
+
+    // a newer list from the internet: swap it in without disturbing what is playing
+    const swapIn = (fresh: Track[]) => {
+      const old = tracksRef.current;
+      if (JSON.stringify(old) === JSON.stringify(fresh)) return;
+      const curId = indexRef.current != null ? old[indexRef.current]?.id : undefined;
+      setTracks(fresh);
+      setDownloaded(new Set(fresh.filter((x) => fileExists(x)).map((x) => x.id)));
+      if (curId) {
+        const ni = fresh.findIndex((x) => x.id === curId);
+        setIndex(ni >= 0 ? ni : null);
+      }
+    };
+
     (async () => {
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        shouldPlayInBackground: true,
-        interruptionMode: 'doNotMix',
-      });
-      const [s, b, n, f] = await Promise.all([loadSettings(), loadBookmarks(), loadNotes(), loadDuaFavs()]);
+      const [s, b, n, f, cached] = await Promise.all([
+        loadSettings(),
+        loadBookmarks(),
+        loadNotes(),
+        loadDuaFavs(),
+        loadCachedTracks(),
+      ]);
       setSettings(s);
       speedRef.current = s.speed;
       setBookmarks(b);
       setNotes(n);
       setDuaFavs(f);
+
+      if (cached) {
+        await showList(cached);
+        fetchTracks(10000)
+          .then(swapIn)
+          .catch(() => {}); // offline or slow: keep the saved list
+      } else {
+        try {
+          await showList(await fetchTracks(20000));
+        } catch {
+          setError('Could not load the surah list. Please connect to the internet once and open the app again.');
+        }
+      }
+
       takeLastCrash().then((c) => {
-        if (!c) return;
+        if (!c || c.where === 'qibla') return; // location being off is not a problem with the app
         const details = `Quran Safar problem report\n${c.at}\n${c.where}: ${c.message}\n${c.stack}`;
         Alert.alert(
           'The app had a problem last time',
@@ -211,16 +267,6 @@ function Main() {
           ],
         );
       });
-      try {
-        const list = await loadTracks();
-        setTracks(list);
-        setDownloaded(new Set(list.filter((x) => fileExists(x)).map((x) => x.id)));
-        const p = await loadProgress();
-        const i = p ? list.findIndex((x) => x.id === p.trackId) : -1;
-        if (p && i >= 0) loadTrack(list, i, p.position, false); // ready to continue; one tap on Play
-      } catch {
-        setError('Could not load the surah list. Connect to the internet once and try again.');
-      }
     })().catch((e) => recordError('startup', e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
