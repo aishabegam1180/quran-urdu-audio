@@ -29,6 +29,10 @@ export function DuasScreen({ app }: { app: AppCtx }) {
   const [filter, setFilter] = useState('all');
   const [q, setQ] = useState('');
 
+  const lang = app.duaLang;
+  const showUr = lang !== 'en';
+  const showEn = lang !== 'ur';
+
   const list = useMemo(() => {
     const k = q.trim().toLowerCase();
     return DUAS.filter((d) => {
@@ -36,15 +40,17 @@ export function DuasScreen({ app }: { app: AppCtx }) {
       if (filter === 'favourites' && !app.duaFavs.includes(d.id)) return false;
       if (!['all', 'prophets', 'favourites'].includes(filter) && !d.cats.includes(filter)) return false;
       if (!k) return true;
-      const hay = [d.title, d.who, duaRef(d), ...d.cats, ...d.ayahs.map((a) => a.ur)].join(' ').toLowerCase();
+      const hay = [d.title, d.who, duaRef(d), ...d.cats, ...d.ayahs.map((a) => `${a.ur} ${a.en}`)].join(' ').toLowerCase();
       return hay.includes(k);
     });
   }, [filter, q, app.duaFavs]);
 
   const share = (d: Dua) => {
     const arabic = d.ayahs.map((a) => `${a.pre ? a.pre + ' ' : ''}${a.dua} ﴿${arabicNumber(a.a)}﴾`).join(' ');
-    const urdu = d.ayahs.map((a) => a.ur).join(' ');
-    Share.share({ message: `${d.title}\n\n${arabic}\n\n${urdu}\n\n— ${duaRef(d)}\n\nShared from Quran Safar – Urdu Tarjuma` }).catch(() => {});
+    const parts = [d.title, arabic];
+    if (showUr) parts.push(d.ayahs.map((a) => a.ur).join(' '));
+    if (showEn) parts.push(d.ayahs.map((a) => a.en).join(' '));
+    Share.share({ message: `${parts.join('\n\n')}\n\n— ${duaRef(d)}\n\nShared from Quran Safar – Urdu Tarjuma` }).catch(() => {});
   };
 
   const listen = (d: Dua) => {
@@ -69,7 +75,8 @@ export function DuasScreen({ app }: { app: AppCtx }) {
             </Text>
           ))}
         </Text>
-        <Text style={[styles.ur, { color: t.text }]}>{d.ayahs.map((a) => a.ur).join(' ')}</Text>
+        {showUr && <Text style={[styles.ur, { color: t.text }]}>{d.ayahs.map((a) => a.ur).join(' ')}</Text>}
+        {showEn && <Text style={[styles.en, { color: t.text }]}>{d.ayahs.map((a) => a.en).join(' ')}</Text>}
         <View style={[styles.actions, { borderTopColor: t.line }]}>
           <Pressable onPress={() => listen(d)} style={[styles.listen, { backgroundColor: t.activeBg }]}>
             <Ionicons name="play" size={13} color={t.green} />
@@ -109,6 +116,29 @@ export function DuasScreen({ app }: { app: AppCtx }) {
           />
         </View>
       </View>
+      <View style={[styles.langRow, { paddingHorizontal: 20 }]}>
+        <Text style={[styles.langLabel, { color: t.muted }]}>Translation</Text>
+        <View style={[styles.segment, { backgroundColor: t.segment }]}>
+          {([
+            ['ur', 'Urdu'],
+            ['en', 'English'],
+            ['both', 'Both'],
+          ] as const).map(([key, label]) => {
+            const on = lang === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => app.setDuaLang(key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={[styles.seg, on && { backgroundColor: t.surface, elevation: 2 }]}
+              >
+                <Text style={[styles.segText, { color: on ? t.green : t.muted }]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
       <View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           {FILTERS.map((f) => {
@@ -129,7 +159,7 @@ export function DuasScreen({ app }: { app: AppCtx }) {
         data={list}
         keyExtractor={(d) => d.id}
         renderItem={card}
-        extraData={[app.duaFavs, t]}
+        extraData={[app.duaFavs, t, lang]}
         initialNumToRender={4}
         windowSize={5}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 + insets.bottom, gap: 12 }}
@@ -146,7 +176,7 @@ export function DuasScreen({ app }: { app: AppCtx }) {
             <Text style={{ textDecorationLine: 'underline' }} onPress={() => Linking.openURL('https://tanzil.net').catch(() => {})}>
               tanzil.net
             </Text>
-            ) · Urdu translation: Fateh Muhammad Jalandhari
+            ) · Urdu translation: Fateh Muhammad Jalandhari · English translation: Saheeh International
           </Text>
         }
       />
@@ -167,6 +197,12 @@ const styles = StyleSheet.create({
   ref: { fontFamily: FONTS.semibold, fontSize: 11, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, overflow: 'hidden' },
   ar: { fontFamily: FONTS.arabic, fontSize: 22, lineHeight: 44, textAlign: 'right', writingDirection: 'rtl' },
   ur: { fontFamily: FONTS.urdu, fontSize: 14, lineHeight: 34, textAlign: 'right', writingDirection: 'rtl' },
+  en: { fontFamily: FONTS.body, fontSize: 14, lineHeight: 21 },
+  langRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  langLabel: { fontFamily: FONTS.semibold, fontSize: 12 },
+  segment: { flex: 1, flexDirection: 'row', padding: 3, gap: 3, borderRadius: 12 },
+  seg: { flex: 1, minHeight: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  segText: { fontFamily: FONTS.semibold, fontSize: 13 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, paddingTop: 10 },
   listen: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: 18 },
   listenText: { fontFamily: FONTS.semibold, fontSize: 13 },

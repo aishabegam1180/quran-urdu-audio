@@ -67,8 +67,9 @@ const KEY_DUA_FAVS = 'duaFavs.v1';
 const KEY_SETTINGS = 'settings.v1';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
-export type Settings = { speed: number; theme: ThemeChoice; hijriOffset: number };
-export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system', hijriOffset: 0 };
+export type DuaLang = 'both' | 'ur' | 'en';
+export type Settings = { speed: number; theme: ThemeChoice; hijriOffset: number; duaLang: DuaLang };
+export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system', hijriOffset: 0, duaLang: 'both' };
 
 export type Bookmark = { trackId: string; position: number; savedAt: number };
 export type Note = {

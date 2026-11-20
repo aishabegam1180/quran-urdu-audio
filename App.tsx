@@ -594,6 +594,8 @@ function Main() {
     deleteNote,
     duaFavs,
     toggleDuaFav,
+    duaLang: settings.duaLang ?? 'both',
+    setDuaLang: (duaLang) => updateSettings({ duaLang }),
     gregorianText,
     hijriText,
     hijriArabic,

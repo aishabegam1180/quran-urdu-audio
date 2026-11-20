@@ -1,4 +1,4 @@
-import { Bookmark, Note, Track } from './library';
+import { Bookmark, DuaLang, Note, Track } from './library';
 import { SurahInfo } from './surahs';
 import { Theme } from './theme';
 
@@ -51,6 +51,8 @@ export type AppCtx = {
   // duas
   duaFavs: string[];
   toggleDuaFav: (id: string) => void;
+  duaLang: DuaLang;
+  setDuaLang: (l: DuaLang) => void;
   // dates
   gregorianText: string;
   hijriText: string;
