@@ -80,7 +80,7 @@ export function NotesScreen({ app }: { app: AppCtx }) {
           t={t}
           title="Notes"
           onBack={() => app.navigate('list')}
-          right={<Text style={[styles.count, { color: t.muted }]}>{app.notes.length} notes</Text>}
+          right={<Text style={[styles.count, { color: t.muted }]}>{app.notes.length} {app.notes.length === 1 ? 'note' : 'notes'}</Text>}
         />
         <View style={[styles.search, { backgroundColor: t.surface, borderColor: t.line }]}>
           <Ionicons name="search" size={18} color={t.muted} />

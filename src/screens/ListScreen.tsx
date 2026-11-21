@@ -118,14 +118,14 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         >
           <Ionicons name="moon-outline" size={18} color={t.gold} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.dateMain, { color: t.headerText }]} numberOfLines={1}>
+            <Text style={[styles.dateMain, { color: t.headerText }]}>
               {app.hijriText}
             </Text>
-            <Text style={[styles.dateSub, { color: t.headerMuted }]} numberOfLines={1}>
+            <Text style={[styles.dateSub, { color: t.headerMuted }]}>
               {app.gregorianText}
             </Text>
           </View>
-          <Text style={[styles.dateAr, { color: t.gold }]} numberOfLines={1}>
+          <Text style={[styles.dateAr, { color: t.gold }]} numberOfLines={2}>
             {app.hijriArabic}
           </Text>
         </Pressable>
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   dateRow: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1 },
   dateMain: { fontFamily: FONTS.semibold, fontSize: 14 },
   dateSub: { fontFamily: FONTS.body, fontSize: 12 },
-  dateAr: { fontFamily: FONTS.arabic, fontSize: 17, lineHeight: 26, maxWidth: 130 },
+  dateAr: { fontFamily: FONTS.arabic, fontSize: 16, lineHeight: 24, maxWidth: 104, textAlign: 'right' },
   circleBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   bulkText: { fontFamily: FONTS.bold, fontSize: 11 },
   continueCard: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, borderWidth: 1 },
