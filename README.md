@@ -10,6 +10,9 @@ An Android app for listening to the Holy Quran — recitation by Shaykh Abdur Ra
 - Search, browse by Juz, bookmarks with the exact time, notes, sleep timer, speed, repeat, dark mode
 - Islamic (Umm al-Qura) date, Qibla compass, 55 duas from the Quran with Urdu translation, feedback by email
 
+## Privacy
+No personal data is collected. Read the full [privacy policy](PRIVACY.md).
+
 ## Credits
 - Duas: Arabic text from the Tanzil Project (https://tanzil.net), used unchanged; Urdu translation by Fateh Muhammad Jalandhari and English translation by Saheeh International (both via Tanzil). The list of dua ayahs follows quranwbw.com/duas.
 - Islamic date: Umm al-Qura calendar data from the hijri-converter project.

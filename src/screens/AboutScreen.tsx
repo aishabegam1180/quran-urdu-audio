@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image, Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { APP_VERSION, FEEDBACK_EMAIL, INSTALL_LINK } from '../config';
+import { APP_VERSION, FEEDBACK_EMAIL, INSTALL_LINK, PRIVACY_URL } from '../config';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
 
@@ -106,6 +106,14 @@ export function AboutScreen({ app }: { app: AppCtx }) {
             <Text style={[styles.btnText, { color: t.text }]}>Share app</Text>
           </Pressable>
         </View>
+
+        <Text
+          onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
+          accessibilityRole="link"
+          style={[styles.small, { color: t.muted, textAlign: 'center', textDecorationLine: 'underline', paddingVertical: 8 }]}
+        >
+          Privacy policy
+        </Text>
       </ScrollView>
     </View>
   );
@@ -141,4 +149,5 @@ const styles = StyleSheet.create({
   star: { position: 'absolute', width: 11, height: 11, borderWidth: 1.3 },
   duaBox: { marginTop: 4, padding: 14, borderRadius: 14, borderWidth: 1, gap: 6 },
   duaRef: { fontFamily: FONTS.semibold, fontSize: 12 },
+  small: { fontFamily: FONTS.body, fontSize: 12, lineHeight: 16 },
 });

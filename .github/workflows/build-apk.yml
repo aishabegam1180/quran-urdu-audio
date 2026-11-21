@@ -1,4 +1,7 @@
-# Builds the Android app (APK) and publishes it to the "app" release.
+# Builds the Android app and publishes it to the "app" release:
+#  - QuranUrduAudio.apk  the install link people use today (signed as before)
+#  - QuranSafar.aab      the file to upload to Google Play, signed with the Play
+#                        upload key (only once the KEYSTORE_PASSPHRASE secret is set)
 # Install link: https://github.com/<owner>/<repo>/releases/download/app/QuranUrduAudio.apk
 name: Build Android app
 
@@ -14,7 +17,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
+    env:
+      # every build gets a higher Android version code, which Google Play requires
+      VERSION_CODE: ${{ github.run_number }}
+      KEYSTORE_PASSPHRASE: ${{ secrets.KEYSTORE_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +39,7 @@ jobs:
       - name: Build release APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
-      - name: Publish to the "app" release
+      - name: Publish APK to the "app" release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -41,3 +48,27 @@ jobs:
             gh release create app --title "Android app" --notes "Download QuranUrduAudio.apk on your phone and install it."
           gh release upload app QuranUrduAudio.apk --clobber
           echo "APK: https://github.com/${{ github.repository }}/releases/download/app/QuranUrduAudio.apk" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build Google Play bundle (AAB)
+        if: env.KEYSTORE_PASSPHRASE != ''
+        working-directory: android
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in ../android-signing/upload.p12.enc -out "$RUNNER_TEMP/upload.p12" -pass env:KEYSTORE_PASSPHRASE
+          export UPLOAD_STORE_FILE="$RUNNER_TEMP/upload.p12"
+          export UPLOAD_STORE_PASSWORD="$KEYSTORE_PASSPHRASE"
+          export UPLOAD_KEY_PASSWORD="$KEYSTORE_PASSPHRASE"
+          export UPLOAD_KEY_ALIAS=upload
+          ./gradlew bundleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/upload.p12"
+      - name: Publish AAB to the "app" release
+        if: env.KEYSTORE_PASSPHRASE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/bundle/release/app-release.aab QuranSafar.aab
+          gh release upload app QuranSafar.aab --clobber
+          echo "Play bundle (version code $VERSION_CODE): https://github.com/${{ github.repository }}/releases/download/app/QuranSafar.aab" >> "$GITHUB_STEP_SUMMARY"
+      - name: Note when the Play key password is not set yet
+        if: env.KEYSTORE_PASSPHRASE == ''
+        run: echo "No KEYSTORE_PASSPHRASE secret yet, so the Google Play bundle (AAB) was not built." >> "$GITHUB_STEP_SUMMARY"
