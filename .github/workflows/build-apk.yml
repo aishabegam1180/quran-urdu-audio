@@ -1,7 +1,7 @@
 # Builds the Android app and publishes it to the "app" release:
 #  - QuranUrduAudio.apk  the install link people use today (signed as before)
 #  - QuranSafar.aab      the file to upload to Google Play, signed with the Play
-#                        upload key (only once the KEYSTORE_PASSPHRASE secret is set)
+#                        upload key (needs the KEYSTORE_PASSPHRASE repository secret)
 # Install link: https://github.com/<owner>/<repo>/releases/download/app/QuranUrduAudio.apk
 name: Build Android app
 
