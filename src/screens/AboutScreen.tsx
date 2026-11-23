@@ -107,6 +107,14 @@ export function AboutScreen({ app }: { app: AppCtx }) {
           </Pressable>
         </View>
 
+        <Pressable
+          onPress={app.openIntro}
+          style={[styles.btn, { flex: 0, backgroundColor: t.surface, borderWidth: 1, borderColor: t.line, alignSelf: 'stretch' }]}
+        >
+          <Ionicons name="help-circle-outline" size={18} color={t.text} />
+          <Text style={[styles.btnText, { color: t.text }]}>How to use the app</Text>
+        </Pressable>
+
         <Text
           onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
           accessibilityRole="link"

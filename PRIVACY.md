@@ -14,6 +14,7 @@ To work, the app saves the following on your own device. It is never sent to us 
 
 - where you stopped listening, so you can continue later
 - your bookmarks, notes, favourite duas and settings (theme, playback speed, Islamic date adjustment, translation choice)
+- your daily streak (which days you listened), Tasbeeh counts and daily reminder time (the reminder is created on your phone, not sent from any server)
 - surah audio files you choose to download for offline listening
 
 All of this is removed when you uninstall the app or clear its data.

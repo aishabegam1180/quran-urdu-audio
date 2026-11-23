@@ -1,9 +1,10 @@
 // Qibla compass: uses the phone's location (only on this screen, never sent anywhere)
 // and its compass to point towards the Kaaba.
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, AppState, Easing, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
@@ -37,7 +38,11 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [heading, setHeading] = useState<number | null>(null);
-  const [lowAccuracy, setLowAccuracy] = useState(false);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  // the dial turns smoothly: heading is kept 'unwrapped' (359° → 361°, not back to 1°) and animated natively
+  const unwrapped = useRef<number | null>(null);
+  const spin = useRef(new Animated.Value(0)).current;
+  const wasAligned = useRef(false);
   const [noCompass, setNoCompass] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -77,8 +82,18 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
           const v = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (timer) clearTimeout(timer);
           setNoCompass(false);
-          setHeading((prev) => (prev == null || Math.abs(prev - v) >= 1 ? v : prev));
-          setLowAccuracy(h.accuracy != null && h.accuracy < 2);
+          const prev = unwrapped.current;
+          let next: number;
+          if (prev == null) next = v;
+          else {
+            const step = ((((v - prev) % 360) + 540) % 360) - 180; // shortest way round
+            next = prev + step * 0.45; // smooth out sensor jitter
+          }
+          unwrapped.current = next;
+          Animated.timing(spin, { toValue: -next, duration: 140, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+          const shown = ((next % 360) + 360) % 360;
+          setHeading((p) => (p == null || Math.abs(p - shown) >= 0.8 ? shown : p));
+          setAccuracy(h.accuracy ?? null);
         });
         if (cancelled) sub.remove();
       } catch {
@@ -154,50 +169,62 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
     );
   } else {
     const h = heading ?? 0;
-    const diff = ((state.bearing - h + 540) % 360) - 180;
-    const aligned = heading != null && Math.abs(diff) <= 3;
+    const diff = ((((state.bearing - h) % 360) + 540) % 360) - 180;
+    const aligned = heading != null && Math.abs(diff) <= 4;
+    if (aligned && !wasAligned.current) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    wasAligned.current = aligned;
     const status =
       heading == null
         ? `Qibla is ${Math.round(state.bearing)}° from North`
         : aligned
-          ? 'You are facing the Qibla'
+          ? 'Facing the Qibla'
           : diff > 0
             ? `Turn right ${Math.round(diff)}°`
             : `Turn left ${Math.round(-diff)}°`;
+    const rotate = spin.interpolate({ inputRange: [-3600, 3600], outputRange: ['-3600deg', '3600deg'] });
+    const goodCompass = accuracy == null || accuracy >= 2;
     body = (
       <>
-        <View style={{ alignItems: 'center', gap: 4, marginTop: 18 }}>
-          <Text style={[styles.status, { color: aligned ? t.green : t.goldText }]}>{status}</Text>
+        <View style={{ alignItems: 'center', gap: 8, marginTop: 16 }}>
+          <View style={[styles.pill, { backgroundColor: aligned ? '#2FA36B' : t.segment }]}>
+            {aligned && <Ionicons name="checkmark" size={18} color="#FFFFFF" />}
+            <Text style={[styles.status, { color: aligned ? '#FFFFFF' : t.goldText }]}>{status}</Text>
+          </View>
           <Text style={[styles.p, { color: t.muted }]}>
             {noCompass && heading == null
               ? 'This phone has no compass. Use the angle below with a separate compass.'
               : aligned
                 ? 'The Kaaba is straight ahead'
-                : 'Turn until the Kaaba is at the top'}
+                : 'Turn until the Kaaba reaches the arrow at the top'}
           </Text>
         </View>
 
-        <View style={[styles.dial, { backgroundColor: t.medal }]}>
-          <View style={[styles.ring, { borderColor: t.gold }]} />
-          {/* compass rose turns with the phone */}
-          <View style={[styles.layer, { transform: [{ rotate: `${-h}deg` }] }]}>
-            {(['N', 'E', 'S', 'W'] as const).map((c, k) => (
-              <View key={c} style={[styles.layer, { transform: [{ rotate: `${k * 90}deg` }] }]}>
-                <Text style={[styles.cardinal, { color: c === 'N' ? t.gold : t.medalText }]}>{c}</Text>
+        <View style={styles.dialBox}>
+          <View style={[styles.pointer, { borderTopColor: aligned ? '#2FA36B' : t.gold }]} />
+          <View style={[styles.dial, { backgroundColor: t.medal, borderColor: aligned ? '#2FA36B' : t.gold }, aligned && styles.glow]}>
+            {/* the whole dial turns with the phone; the Kaaba sits on it at the Qibla angle */}
+            <Animated.View style={[styles.layer, { transform: [{ rotate: heading == null ? '0deg' : rotate }] }]}>
+              {Array.from({ length: 36 }, (_, k) => (
+                <View key={k} style={[styles.layer, { transform: [{ rotate: `${k * 10}deg` }] }]}>
+                  <View style={[styles.tick, { height: k % 9 === 0 ? 14 : 8, opacity: k % 9 === 0 ? 0.8 : 0.4, backgroundColor: t.medalText }]} />
+                </View>
+              ))}
+              {(['N', 'E', 'S', 'W'] as const).map((c, k) => (
+                <View key={c} style={[styles.layer, { transform: [{ rotate: `${k * 90}deg` }] }]}>
+                  <Text style={[styles.cardinal, { color: c === 'N' ? '#E05A4F' : t.medalText }]}>{c}</Text>
+                </View>
+              ))}
+              <View style={[styles.layer, { transform: [{ rotate: `${state.bearing}deg` }] }]}>
+                <View style={[styles.kaaba, { borderColor: t.gold }]}>
+                  <View style={[styles.kaabaBand, { backgroundColor: t.gold }]} />
+                </View>
+                <View style={[styles.needle, { borderBottomColor: t.gold }]} />
               </View>
-            ))}
-          </View>
-          {/* Kaaba pointer */}
-          <View style={[styles.layer, { transform: [{ rotate: `${heading == null ? state.bearing : diff}deg` }] }]}>
-            <View style={[styles.kaaba, { borderColor: t.gold }]}>
-              <View style={[styles.kaabaBand, { backgroundColor: t.gold }]} />
+            </Animated.View>
+            <View style={[styles.hub, { backgroundColor: t.medalInner, borderColor: t.gold }]}>
+              <Text style={[styles.hubText, { color: '#F7F3EA' }]}>{heading == null ? '—' : `${Math.round(h)}°`}</Text>
             </View>
-            <View style={[styles.needle, { borderBottomColor: t.gold }]} />
           </View>
-          <View style={[styles.hub, { backgroundColor: t.medalInner, borderColor: t.gold }]}>
-            <Text style={[styles.hubText, { color: '#F7F3EA' }]}>{heading == null ? '—' : `${Math.round(h)}°`}</Text>
-          </View>
-          <View style={[styles.marker, { backgroundColor: aligned ? '#2FA36B' : t.gold }]} />
         </View>
 
         <View style={styles.cards}>
@@ -212,10 +239,10 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
         </View>
 
         <View style={{ flex: 1 }} />
-        <View style={[styles.tip, { backgroundColor: lowAccuracy ? t.chipOn : t.segment }]}>
+        <View style={[styles.tip, { backgroundColor: goodCompass ? t.segment : t.chipOn }]}>
           <Ionicons name="infinite-outline" size={22} color={t.goldText} />
           <Text style={[styles.tipText, { color: t.text }]}>
-            {lowAccuracy ? 'Compass needs calibrating: ' : ''}Keep the phone flat, away from metal and magnets. If the arrow seems wrong, move
+            {goodCompass ? '' : 'Compass needs calibrating: '}Keep the phone flat, away from metal and magnets. If the arrow seems wrong, move
             the phone in a figure-8 a few times.
           </Text>
         </View>
@@ -225,7 +252,20 @@ export function QiblaScreen({ app }: { app: AppCtx }) {
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg, paddingTop: insets.top + 10, paddingBottom: insets.bottom + 16 }]}>
-      <ScreenHeader t={t} title="Qibla direction" onBack={() => app.navigate('list')} />
+      <ScreenHeader
+        t={t}
+        title="Qibla direction"
+        onBack={() => app.navigate('list')}
+        right={
+          state.kind === 'ready' && accuracy != null ? (
+            <View style={[styles.badge, { backgroundColor: accuracy >= 2 ? t.chipOn : t.segment }]}>
+              <Text style={[styles.badgeText, { color: accuracy >= 2 ? t.green : t.goldText }]}>
+                {accuracy >= 3 ? 'Compass: good' : accuracy >= 2 ? 'Compass: fair' : 'Calibrate'}
+              </Text>
+            </View>
+          ) : undefined
+        }
+      />
       {body}
     </View>
   );
@@ -238,18 +278,23 @@ const styles = StyleSheet.create({
   p: { fontFamily: FONTS.body, fontSize: 13, lineHeight: 19, textAlign: 'center' },
   btn: { marginTop: 6, height: 50, paddingHorizontal: 24, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   btnText: { fontFamily: FONTS.semibold, fontSize: 15 },
-  status: { fontFamily: FONTS.bold, fontSize: 20 },
-  dial: { marginTop: 22, alignSelf: 'center', width: DIAL, height: DIAL, borderRadius: DIAL / 2, alignItems: 'center', justifyContent: 'center' },
-  ring: { position: 'absolute', width: DIAL - 24, height: DIAL - 24, borderRadius: (DIAL - 24) / 2, borderWidth: 1, opacity: 0.5 },
+  status: { fontFamily: FONTS.bold, fontSize: 18 },
+  pill: { minHeight: 44, paddingHorizontal: 18, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dialBox: { marginTop: 14, alignSelf: 'center', alignItems: 'center' },
+  pointer: { width: 0, height: 0, borderLeftWidth: 12, borderRightWidth: 12, borderTopWidth: 18, borderLeftColor: 'transparent', borderRightColor: 'transparent', marginBottom: 4 },
+  dial: { width: DIAL, height: DIAL, borderRadius: DIAL / 2, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  glow: { shadowColor: '#2FA36B', shadowOpacity: 0.8, shadowRadius: 18, elevation: 12 },
+  tick: { marginTop: 6, width: 2, borderRadius: 1 },
+  badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  badgeText: { fontFamily: FONTS.semibold, fontSize: 12 },
   layer: { position: 'absolute', width: DIAL, height: DIAL, alignItems: 'center' },
-  cardinal: { marginTop: 22, fontFamily: FONTS.bold, fontSize: 16 },
-  kaaba: { marginTop: 40, width: 28, height: 28, borderRadius: 4, borderWidth: 2, backgroundColor: '#1D2A24', justifyContent: 'flex-start' },
+  cardinal: { marginTop: 26, fontFamily: FONTS.bold, fontSize: 16 },
+  kaaba: { marginTop: 44, width: 28, height: 28, borderRadius: 4, borderWidth: 2, backgroundColor: '#1D2A24', justifyContent: 'flex-start' },
   kaabaBand: { marginTop: 6, height: 2 },
   needle: { width: 0, height: 0, borderLeftWidth: 12, borderRightWidth: 12, borderBottomWidth: 64, borderLeftColor: 'transparent', borderRightColor: 'transparent', marginTop: 4 },
   hub: { width: 84, height: 84, borderRadius: 42, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   hubText: { fontFamily: FONTS.bold, fontSize: 20 },
-  marker: { position: 'absolute', top: 4, width: 14, height: 14, transform: [{ rotate: '45deg' }] },
-  cards: { marginTop: 22, flexDirection: 'row', gap: 10 },
+  cards: { marginTop: 18, flexDirection: 'row', gap: 10 },
   card: { flex: 1, padding: 14, borderRadius: 16, borderWidth: 1, gap: 4 },
   cardLabel: { fontFamily: FONTS.body, fontSize: 12 },
   cardValue: { fontFamily: FONTS.bold, fontSize: 20 },

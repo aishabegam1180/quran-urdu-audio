@@ -1,4 +1,5 @@
 import { Bookmark, DuaLang, Note, Track } from './library';
+import { Reminder } from './streak';
 import { SurahInfo } from './surahs';
 import { Theme } from './theme';
 
@@ -10,7 +11,16 @@ export type Sleep =
   | { kind: 'minutes'; minutes: number; endsAt: number }
   | { kind: 'end' };
 
-export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about';
+export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about' | 'tasbeeh' | 'streak';
+
+export type StreakInfo = {
+  current: number;
+  best: number;
+  doneToday: boolean;
+  todaySecs: number;
+  week: { label: string; done: boolean; today: boolean; key: string }[];
+  reminder: Reminder;
+};
 
 /** Everything the screens need from the app: state plus actions. */
 export type AppCtx = {
@@ -67,6 +77,11 @@ export type AppCtx = {
   setSleep: (choice: 'off' | 'end' | number) => void;
   repeat: boolean;
   toggleRepeat: () => void;
+  // daily streak
+  streak: StreakInfo;
+  setReminder: (patch: Partial<Reminder>) => void;
+  reminderBlocked: boolean;
+  openIntro: () => void;
   // navigation
   view: View;
   navigate: (v: View) => void;

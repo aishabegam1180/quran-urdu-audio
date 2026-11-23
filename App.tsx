@@ -11,6 +11,7 @@ import {
   useAudioPlayer,
   useAudioPlayerStatus,
 } from 'expo-audio';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -46,9 +47,23 @@ import { ErrorBoundary } from './src/ErrorBoundary';
 import { RECITERS } from './src/config';
 import { arabicNumber } from './src/duas';
 import { HIJRI_MONTHS, HIJRI_MONTHS_AR, toHijri } from './src/hijri';
+import { askReminderPermission, refreshReminders } from './src/reminders';
+import {
+  Reminder,
+  StreakData,
+  addListening,
+  currentStreak,
+  doneToday,
+  emptyStreak,
+  lastWeek,
+  loadStreak,
+  rollDay,
+  saveStreak,
+} from './src/streak';
 import { AboutScreen } from './src/screens/AboutScreen';
 import { DuasScreen } from './src/screens/DuasScreen';
 import { FeedbackScreen } from './src/screens/FeedbackScreen';
+import { IntroScreen } from './src/screens/IntroScreen';
 import { ListScreen } from './src/screens/ListScreen';
 import { MoreSheet } from './src/screens/MoreSheet';
 import { NoteDraft, NoteEditor } from './src/screens/NoteEditor';
@@ -57,6 +72,8 @@ import { QiblaScreen } from './src/screens/QiblaScreen';
 import { SavedScreen } from './src/screens/SavedScreen';
 import { PlayerScreen } from './src/screens/PlayerScreen';
 import { SleepSheet } from './src/screens/SleepSheet';
+import { StreakScreen } from './src/screens/StreakScreen';
+import { TasbeehScreen } from './src/screens/TasbeehScreen';
 import { SURAHS, surahInfo } from './src/surahs';
 import { DARK, LIGHT } from './src/theme';
 import { AppCtx, Sleep, SurahGroup, View as Screen } from './src/types';
@@ -65,6 +82,8 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const SKIP_SECONDS = 10;
+const KEY_INTRO = 'intro.seen.v1';
+const STREAK_TICK = 5; // seconds of listening counted per tick
 const FADE_SECONDS = 10;
 
 installCrashHandler();
@@ -122,6 +141,9 @@ function Main() {
   const [sleep, setSleepState] = useState<Sleep>({ kind: 'off' });
   const [sleepLeft, setSleepLeft] = useState(0);
   const [repeat, setRepeat] = useState(false);
+  const [streakData, setStreakData] = useState<StreakData>(() => emptyStreak());
+  const [reminderBlocked, setReminderBlocked] = useState(false);
+  const [intro, setIntro] = useState(false);
 
   const pendingSeek = useRef<number | null>(null);
   const lastSaved = useRef(0);
@@ -229,13 +251,18 @@ function Main() {
     };
 
     (async () => {
-      const [s, b, n, f, cached] = await Promise.all([
+      const [s, b, n, f, cached, st, seenIntro] = await Promise.all([
         loadSettings(),
         loadBookmarks(),
         loadNotes(),
         loadDuaFavs(),
         loadCachedTracks(),
+        loadStreak(),
+        AsyncStorage.getItem(KEY_INTRO).catch(() => '1'),
       ]);
+      setStreakData(st);
+      refreshReminders(st); // keeps the next two weeks of reminders scheduled
+      if (!seenIntro) setIntro(true);
       setSettings(s);
       speedRef.current = s.speed;
       setBookmarks(b);
@@ -299,6 +326,42 @@ function Main() {
     });
     return () => sub.remove();
   }, [track, player, status.isLoaded]);
+
+  // ---- daily streak: count listening time while the Quran is playing ----
+  useEffect(() => {
+    if (!status.playing) return;
+    const id = setInterval(() => {
+      setStreakData((s) => {
+        const now = new Date();
+        const wasDone = doneToday(s, now);
+        const next = addListening(s, STREAK_TICK, now);
+        saveStreak(next);
+        if (!wasDone && doneToday(next, now)) refreshReminders(next); // today is done: skip today's reminder
+        return next;
+      });
+    }, STREAK_TICK * 1000);
+    return () => clearInterval(id);
+  }, [status.playing]);
+
+  const setReminder = async (patch: Partial<Reminder>) => {
+    let p = patch;
+    if (patch.on) {
+      const ok = await askReminderPermission();
+      setReminderBlocked(!ok);
+      if (!ok) p = { ...patch, on: false };
+    } else if (patch.on === false) setReminderBlocked(false);
+    setStreakData((s) => {
+      const next = { ...s, reminder: { ...s.reminder, ...p } };
+      saveStreak(next);
+      refreshReminders(next);
+      return next;
+    });
+  };
+
+  const closeIntro = () => {
+    setIntro(false);
+    AsyncStorage.setItem(KEY_INTRO, '1').catch(() => {});
+  };
 
   // ---- when a part ends: repeat it, stop for the sleep timer, or continue ----
   useEffect(() => {
@@ -559,6 +622,17 @@ function Main() {
     applySpeed();
   };
 
+  const nowS = new Date();
+  const streakNow = rollDay(streakData, nowS);
+  const streakInfo = {
+    current: currentStreak(streakNow, nowS),
+    best: Math.max(streakNow.best, currentStreak(streakNow, nowS)),
+    doneToday: doneToday(streakNow, nowS),
+    todaySecs: streakNow.todaySecs,
+    week: lastWeek(streakNow, nowS),
+    reminder: streakNow.reminder,
+  };
+
   const app: AppCtx = {
     t,
     tracks,
@@ -608,6 +682,10 @@ function Main() {
     setSleep,
     repeat,
     toggleRepeat: () => setRepeat((r) => !r),
+    streak: streakInfo,
+    setReminder: (patch) => void setReminder(patch),
+    reminderBlocked,
+    openIntro: () => setIntro(true),
     view,
     navigate: (v) => setView(v),
     openMenu: () => setMenu(true),
@@ -619,7 +697,7 @@ function Main() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <StatusBar style={view === 'list' || view === 'about' || dark ? 'light' : 'dark'} />
+      <StatusBar style={view === 'list' || view === 'about' || view === 'tasbeeh' || dark ? 'light' : 'dark'} />
       <ErrorBoundary
         key={screenKey}
         t={t}
@@ -643,12 +721,17 @@ function Main() {
           <FeedbackScreen app={app} />
         ) : view === 'about' ? (
           <AboutScreen app={app} />
+        ) : view === 'tasbeeh' ? (
+          <TasbeehScreen app={app} />
+        ) : view === 'streak' ? (
+          <StreakScreen app={app} />
         ) : (
           <ListScreen app={app} error={error} />
         )}
         <SleepSheet app={app} visible={sheet} />
         <MoreSheet app={app} visible={menu} onClose={() => setMenu(false)} />
         <NoteEditor app={app} draft={noteDraft} onClose={() => setNoteDraft(null)} onSave={saveNote} />
+        <IntroScreen visible={intro} onDone={closeIntro} />
       </ErrorBoundary>
     </View>
   );

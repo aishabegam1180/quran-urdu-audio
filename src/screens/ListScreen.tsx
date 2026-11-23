@@ -77,6 +77,18 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
           <Text style={[styles.headerAr, { color: t.gold }]}>القرآن الكريم</Text>
           <Text style={[styles.h1, { color: t.headerText }]}>Quran Safar</Text>
           <Text style={[styles.h2, { color: t.headerMuted }]}>Urdu Tarjuma · {RECITERS}</Text>
+          <Pressable
+            onPress={() => app.navigate('streak')}
+            accessibilityLabel={`Daily streak: ${app.streak.current} ${app.streak.current === 1 ? 'day' : 'days'}. Open streak.`}
+            style={[styles.streakBtn, { borderColor: app.streak.doneToday ? 'rgba(242,181,74,0.7)' : t.headerLine, backgroundColor: app.streak.doneToday ? 'rgba(242,181,74,0.18)' : 'transparent' }]}
+          >
+            <Ionicons name={app.streak.doneToday ? 'flame' : 'flame-outline'} size={16} color="#F2B54A" />
+            <Text style={[styles.streakText, { color: t.headerText }]}>
+              {app.streak.current > 0
+                ? `${app.streak.current}-day streak${app.streak.doneToday ? '' : ' · listen 1 min today'}`
+                : 'Start your daily streak · listen 1 min'}
+            </Text>
+          </Pressable>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
@@ -387,6 +399,8 @@ const styles = StyleSheet.create({
   dateSub: { fontFamily: FONTS.body, fontSize: 12 },
   dateAr: { fontFamily: FONTS.arabic, fontSize: 16, lineHeight: 24, maxWidth: 104, textAlign: 'right' },
   circleBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  streakBtn: { alignSelf: 'flex-start', marginTop: 6, minHeight: 32, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  streakText: { fontFamily: FONTS.semibold, fontSize: 12 },
   bulkText: { fontFamily: FONTS.bold, fontSize: 11 },
   continueCard: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, borderWidth: 1 },
   eyebrow: { fontFamily: FONTS.semibold, fontSize: 11, letterSpacing: 0.9 },
