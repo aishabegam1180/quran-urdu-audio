@@ -1,0 +1,57 @@
+# Downloads the open Al-Mukhtasar tafsir data (Tafsir Center for Quranic Studies, CC BY 4.0)
+# and attaches it to the "data" release, for preparing the Verse of the Day list.
+# It does not change the app.
+name: fetch-tafsir
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/fetch-tafsir.yml']
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Download the tafsir database
+        run: |
+          pip install -q huggingface_hub
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          import sqlite3, json
+          p = hf_hub_download(repo_id="tafsircenter/tafsir-mcp-data", filename="quran.db", repo_type="dataset", local_dir=".")
+          db = sqlite3.connect(p)
+          tables = {}
+          for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'"):
+              cols = [r[1] for r in db.execute(f"PRAGMA table_info('{name}')")]
+              tables[name] = cols
+          json.dump(tables, open("schema.json", "w"), ensure_ascii=False, indent=1)
+          rows = db.execute("SELECT surahNo, ayahNo, Mukhtasaren, Mukhtasarar FROM QuranTafseer ORDER BY surahNo, ayahNo").fetchall()
+          json.dump([{"s": s, "a": a, "en": en, "ar": ar} for s, a, en, ar in rows], open("mukhtasar.json", "w"), ensure_ascii=False)
+          fw = db.execute("SELECT page, content FROM mokhtasar_fawaed ORDER BY page, rowid").fetchall()
+          json.dump([{"page": p_, "text": t} for p_, t in fw], open("fawaed.json", "w"), ensure_ascii=False)
+          # any table that maps ayahs to Mushaf pages
+          pages = {}
+          for name, cols in tables.items():
+              low = [c.lower() for c in cols]
+              if "page" in low and ("ayahno" in low or "aya" in low):
+                  pages[name] = cols
+          json.dump(pages, open("page_tables.json", "w"), indent=1)
+          print(len(rows), "ayahs;", len(fw), "fawaed;", "page tables:", pages)
+          PY
+      - name: Check QuranEnc for English and Urdu Mukhtasar
+        run: |
+          for u in tafsirs/list/en tafsirs/list/english tafsirs/list/ur tafsirs/list/urdu translations/list/ur; do
+            echo "== $u"; curl -s "https://quranenc.com/api/v1/$u" | head -c 4000; echo
+          done > quranenc.txt
+          for k in english_mokhtasar english_mukhtasar urdu_mokhtasar urdu_mukhtasar; do
+            echo "== $k"; curl -s "https://quranenc.com/api/v1/tafsir/aya/$k/2/153" | head -c 3000; echo
+          done >> quranenc.txt
+          cat quranenc.txt | head -c 6000
+      - name: Attach the files to the "data" release
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          gzip -k mukhtasar.json fawaed.json
+          gh release view data -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create data -R "$GITHUB_REPOSITORY" -t "Data (not the app)" -n "Open data used to prepare app content. Al-Mukhtasar: Tafsir Center for Quranic Studies (https://tafsir.net), CC BY 4.0."
+          gh release upload data -R "$GITHUB_REPOSITORY" --clobber mukhtasar.json.gz fawaed.json.gz schema.json page_tables.json quranenc.txt
