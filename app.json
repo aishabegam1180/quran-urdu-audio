@@ -54,7 +54,8 @@
           "isAndroidForegroundServiceEnabled": false
         }
       ],
-      "./plugins/withUploadSigning"
+      "./plugins/withUploadSigning",
+      "./plugins/withOptionalPortrait"
     ]
   }
 }
