@@ -43,6 +43,7 @@ jobs:
           cat index.txt || echo "no files"
           zip -qr ../adhan.zip .
       - name: Compare prayer times
+        continue-on-error: true
         run: |
           npm init -y >/dev/null && npm i -s adhan@4
           cat > cmp.js <<'JS'
@@ -55,7 +56,12 @@ jobs:
             for (const [name, lat, lng] of cities) for (const ds of dates) {
               const [y, m, d] = ds.split('-').map(Number);
               const p = new adhan.PrayerTimes(new adhan.Coordinates(lat, lng), new Date(y, m - 1, d), Object.assign(adhan.CalculationMethod.Karachi(), { madhab: adhan.Madhab.Hanafi }));
-              const r = await (await fetch(`https://api.aladhan.com/v1/timings/${d}-${m}-${y}?latitude=${lat}&longitude=${lng}&method=1&school=1`)).json();
+              let r;
+              for (let k = 0; k < 5; k++) {
+                await new Promise((ok) => setTimeout(ok, 1500));
+                try { r = await (await fetch(`https://api.aladhan.com/v1/timings/${d}-${m}-${y}?latitude=${lat}&longitude=${lng}&method=1&school=1`)).json(); if (r && r.data && r.data.timings) break; } catch (e) { console.log('retry', name, ds, String(e)); }
+              }
+              if (!r || !r.data || !r.data.timings) { out.push(`${name} ${ds}: AlAdhan API gave no answer`); continue; }
               const tz = r.data.meta.timezone, t = r.data.timings;
               for (const [k, a] of [['Fajr','fajr'],['Sunrise','sunrise'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']]) {
                 const mine = fmt(p[a], tz), ref = t[k].slice(0, 5);
@@ -70,6 +76,23 @@ jobs:
           })();
           JS
           node cmp.js
+      - name: Transcribe Adhans (to find the Fajr one)
+        continue-on-error: true
+        timeout-minutes: 25
+        run: |
+          pip install -q faster-whisper
+          python3 - <<'PY2'
+          from faster_whisper import WhisperModel
+          import glob, os
+          m = WhisperModel("small", device="cpu", compute_type="int8")
+          with open("adhan-transcripts.txt", "w") as f:
+              for p in sorted(glob.glob("adhan/full/*.mp3")):
+                  segs, _ = m.transcribe(p, language="ar", beam_size=1)
+                  text = " ".join(x.text.strip() for x in segs)
+                  f.write(f"== {os.path.basename(p)}\n{text}\nFAJR PHRASE (النوم) FOUND: {'النوم' in text or 'نوم' in text}\n\n")
+                  print(os.path.basename(p), 'done', flush=True)
+          PY2
+          cat adhan-transcripts.txt
       - name: Reciter names from Islamic Network
         run: curl -s https://api.alquran.cloud/v1/edition/format/audio | python3 -c "import json,sys;[print(e['identifier'],'|',e['englishName'],'|',e['type'],'|',e['language']) for e in json.load(sys.stdin)['data']]" > reciter-names.txt; cat reciter-names.txt
       - name: Check reciters have all ayahs
@@ -107,4 +130,4 @@ jobs:
         run: |
           gh release view data -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create data -R "$GITHUB_REPOSITORY" -t "Data (not the app)" -n "Open data used to prepare app content."
           cp adhan/index.txt adhan-index.txt 2>/dev/null || echo none > adhan-index.txt
-          gh release upload data -R "$GITHUB_REPOSITORY" --clobber $(ls adhan.zip adhan-index.txt reciter-names.txt prayer-compare.txt reciters.txt 2>/dev/null)
+          gh release upload data -R "$GITHUB_REPOSITORY" --clobber $(ls adhan-transcripts.txt adhan.zip adhan-index.txt reciter-names.txt prayer-compare.txt reciters.txt 2>/dev/null)
