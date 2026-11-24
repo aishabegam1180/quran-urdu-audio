@@ -14,11 +14,13 @@ export function SavedList({
   bottomPad,
   header,
   onScroll,
+  onScrollBeginDrag,
 }: {
   app: AppCtx;
   bottomPad: number;
   header?: React.ReactElement;
   onScroll?: FlatListProps<unknown>['onScroll'];
+  onScrollBeginDrag?: () => void;
 }) {
   const { t } = app;
   const items = [...app.bookmarks]
@@ -38,6 +40,7 @@ export function SavedList({
       keyExtractor={(x) => x.b.trackId}
       ListHeaderComponent={header}
       onScroll={onScroll}
+      onScrollBeginDrag={onScrollBeginDrag}
       scrollEventThrottle={32}
       contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomPad, gap: 8 }}
       ListEmptyComponent={

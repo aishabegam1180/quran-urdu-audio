@@ -44,14 +44,19 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
   // the big header folds into one line once the list is scrolled, and comes back at the top
   const [compact, setCompact] = useState(false);
   const compactRef = useRef(false);
+  const dragged = useRef(false); // only fold after the person scrolls, not when the list jumps to the playing surah
   const onScroll = useRef((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const y = e.nativeEvent.contentOffset.y;
+    if (!dragged.current && !compactRef.current) return;
     const want = compactRef.current ? y > 8 : y > 80;
     if (want !== compactRef.current) {
       compactRef.current = want;
       LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
       setCompact(want);
     }
+  }).current;
+  const onDrag = useRef(() => {
+    dragged.current = true;
   }).current;
 
   // open the surah that is playing when the app starts
@@ -359,6 +364,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         contentContainerStyle={[styles.listPad, styles.inner, { paddingBottom: padBottom }]}
         keyboardShouldPersistTaps="handled"
         onScroll={onScroll}
+        onScrollBeginDrag={onDrag}
         scrollEventThrottle={32}
         onScrollToIndexFailed={() => {}}
         ListEmptyComponent={empty('No surah matches your search.')}
@@ -381,6 +387,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         keyExtractor={(j) => String(j.n)}
         contentContainerStyle={[styles.listPad, styles.inner, bottomPad]}
         onScroll={onScroll}
+        onScrollBeginDrag={onDrag}
         scrollEventThrottle={32}
         renderItem={({ item: j }) => (
           <HoverPressable onPress={() => j.i >= 0 && app.pick(j.i)} style={[styles.surahRow, { borderRadius: 15 }]} hoverStyle={{ backgroundColor: t.segment }}>
@@ -396,7 +403,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         )}
       />
     );
-  else body = <SavedList app={app} bottomPad={padBottom} onScroll={onScroll} />;
+  else body = <SavedList app={app} bottomPad={padBottom} onScroll={onScroll} onScrollBeginDrag={onDrag} />;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
