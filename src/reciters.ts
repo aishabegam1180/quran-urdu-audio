@@ -1,27 +1,30 @@
-// Update C (draft, not used yet): verse-by-verse reciters from the Islamic Network CDN.
-// Each ayah is its own file, which is what lets the reader highlight the ayah being recited.
-// Credit: Islamic Network (https://islamic.network), audio at cdn.islamic.network.
-import { globalAyah } from './quran';
+// Reciters. 'urdu' is the app's own audio: Al-Sudais & Al-Shuraim with the Urdu translation, in parts.
+// The others are Arabic only, one file per ayah from the Islamic Network audio service
+// (cdn.islamic.network), which is what lets the Quran text highlight the ayah being recited.
+import { RECITERS as URDU_RECITERS } from './config';
 
-export type Reciter = { id: string; name: string; style: string };
+export type Reciter = { id: string; name: string; short: string };
 
-// Checked for all 6,236 ayahs before release (see the prep-update-c workflow).
-export const RECITERS: Reciter[] = [
-  { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy', style: 'Murattal' },
-  { id: 'ar.abdurrahmaansudais', name: 'Abdur-Rahman As-Sudais', style: 'Murattal' },
-  { id: 'ar.saoodshuraym', name: "Sa'ud Ash-Shuraym", style: 'Murattal' },
-  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly', style: 'Murattal' },
-  { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary', style: 'Murattal' },
-  { id: 'ar.minshawi', name: 'Mohamed Siddiq Al-Minshawi', style: 'Murattal' },
-  { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit Abdus Samad', style: 'Murattal' },
-  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shaatree', style: 'Murattal' },
-  { id: 'ar.ahmedajamy', name: 'Ahmed ibn Ali Al-Ajamy', style: 'Murattal' },
-  { id: 'ar.hanirifai', name: 'Hani Ar-Rifai', style: 'Murattal' },
+export const URDU = 'urdu';
+
+// Names as listed by Islamic Network (api.alquran.cloud/v1/edition/format/audio), written in full.
+export const ARABIC_RECITERS: Reciter[] = [
+  { id: 'ar.alafasy', name: 'Mishary Rashid Alafasy', short: 'Alafasy' },
+  { id: 'ar.abdurrahmaansudais', name: 'Abdur-Rahman As-Sudais', short: 'As-Sudais' },
+  { id: 'ar.saoodshuraym', name: "Sa'ud Ash-Shuraym", short: 'Ash-Shuraym' },
+  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly', short: 'Al-Muaiqly' },
+  { id: 'ar.husary', name: 'Mahmoud Khalil Al-Husary', short: 'Al-Husary' },
+  { id: 'ar.minshawi', name: 'Mohamed Siddiq Al-Minshawi', short: 'Al-Minshawi' },
+  { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit Abdus-Samad', short: 'Abdul Basit' },
+  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shaatree', short: 'Ash-Shaatree' },
+  { id: 'ar.ahmedajamy', name: 'Ahmed ibn Ali Al-Ajamy', short: 'Al-Ajamy' },
+  { id: 'ar.hanirifai', name: 'Hani Ar-Rifai', short: 'Ar-Rifai' },
 ];
 
-export const DEFAULT_RECITER = 'ar.alafasy';
+export const isArabic = (id: string) => id !== URDU && ARABIC_RECITERS.some((r) => r.id === id);
 
-export const reciterAyahUrl = (reciter: string, surah: number, ayah: number) =>
-  `https://cdn.islamic.network/quran/audio/128/${reciter}/${globalAyah(surah, ayah)}.mp3`;
-
-export const reciterName = (id: string) => RECITERS.find((r) => r.id === id)?.name ?? id;
+/** Name shown under the title, in the mini player and on the lock screen. */
+export function reciterLabel(id: string) {
+  if (!isArabic(id)) return `${URDU_RECITERS} · Urdu`;
+  return `${ARABIC_RECITERS.find((r) => r.id === id)!.name} · Arabic`;
+}

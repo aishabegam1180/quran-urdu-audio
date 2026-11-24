@@ -68,8 +68,9 @@ const KEY_SETTINGS = 'settings.v1';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
 export type DuaLang = 'both' | 'ur' | 'en';
-export type Settings = { speed: number; theme: ThemeChoice; hijriOffset: number; duaLang: DuaLang };
-export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system', hijriOffset: 0, duaLang: 'both' };
+/** reciter: 'urdu' = Al-Sudais & Al-Shuraim with Urdu translation (the parts); otherwise an Arabic-only, ayah-by-ayah reciter id. */
+export type Settings = { speed: number; theme: ThemeChoice; hijriOffset: number; duaLang: DuaLang; reciter: string };
+export const DEFAULT_SETTINGS: Settings = { speed: 1, theme: 'system', hijriOffset: 0, duaLang: 'both', reciter: 'urdu' };
 
 export type Bookmark = { trackId: string; position: number; savedAt: number };
 export type Note = {

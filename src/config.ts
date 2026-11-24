@@ -1,6 +1,6 @@
 // App-wide constants.
 export const APP_NAME = 'Quran Safar – Urdu Tarjuma';
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 export const FEEDBACK_EMAIL = 'aishadawood973@gmail.com';
 export const RECITERS = 'Al-Sudais & Al-Shuraim';
 export const RECITERS_FULL = 'Shaykh Abdur Rahman Al-Sudais & Shaykh Saud Al-Shuraim';

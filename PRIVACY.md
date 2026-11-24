@@ -19,9 +19,9 @@ To work, the app saves the following on your own device. It is never sent to us 
 
 All of this is removed when you uninstall the app or clear its data.
 
-## Location (Qibla only)
+## Location (Qibla and prayer times only)
 
-The Qibla screen uses your phone's location and compass to show the direction of the Kaaba. Location is asked for only when you open the Qibla screen, is used only on your phone to calculate the direction and distance, and is never stored, sent or shared. The rest of the app works with location turned off.
+The Qibla screen uses your phone's location and compass to show the direction of the Kaaba. Location is asked for only when you open the Qibla screen, is used only on your phone to calculate the direction and distance, and is never stored, sent or shared. The Prayer times screen can use your location once, if you tap "Use my location", to calculate the times for where you are. Only the rounded position is saved, on your phone, so the times stay correct; it is never sent or shared, and you can pick a city from a list instead. The rest of the app works with location turned off.
 
 ## Internet use
 

@@ -1,0 +1,57 @@
+# Test build for the update being prepared on the update-c branch.
+# It installs NEXT TO the real app (different app id and name "Quran Safar TEST"), so testing it
+# does not touch the Play Store app or its data. It never builds the Play bundle (AAB).
+# Download: https://github.com/<owner>/<repo>/releases/download/test/QuranSafar-TEST.apk
+name: Build test app (update-c)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [update-c]
+    paths-ignore: [scripts/**, "**.md", .github/workflows/prep-update-c.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: test-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - name: Make it a separate test app
+        run: |
+          node -e "
+            const fs = require('fs');
+            const j = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            j.expo.name = 'Quran Safar TEST';
+            j.expo.android.package = j.expo.android.package + '.test';
+            fs.writeFileSync('app.json', JSON.stringify(j, null, 2));
+          "
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Publish to the "test" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk QuranSafar-TEST.apk
+          gh release view test >/dev/null 2>&1 || \
+            gh release create test --prerelease --title "Test app (not for the public)" --notes "Installs next to the real app as 'Quran Safar TEST'."
+          gh release upload test QuranSafar-TEST.apk --clobber

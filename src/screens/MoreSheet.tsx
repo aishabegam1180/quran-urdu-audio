@@ -1,12 +1,14 @@
-// The ☰ More menu: Read Quran, Qibla, Tasbeeh, Duas, Streak, Notes, Saved, Feedback, About.
+// The ☰ More menu: Read Quran, Reciter, Prayer times, Qibla, Tasbeeh, Duas, Streak, Notes, Saved, Feedback, About.
 import { Ionicons } from '@expo/vector-icons';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FONTS } from '../theme';
 import { AppCtx, View as Screen } from '../types';
 
-const ITEMS: { view: Screen; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const ITEMS: { view: Screen | 'reciter'; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { view: 'readhome', label: 'Read Quran', sub: 'Indo-Pak script with Urdu & English', icon: 'book-outline' },
+  { view: 'reciter', label: 'Reciter', sub: 'Urdu, or 10 Arabic reciters with highlighting', icon: 'headset-outline' },
+  { view: 'prayer', label: 'Prayer times', sub: 'Today’s times for your city', icon: 'time-outline' },
   { view: 'qibla', label: 'Qibla direction', sub: 'Compass pointing to the Kaaba', icon: 'compass-outline' },
   { view: 'tasbeeh', label: 'Tasbeeh', sub: 'Count your dhikr with a swipe', icon: 'ellipse-outline' },
   { view: 'duas', label: 'Duas from the Quran', sub: '55 duas with Urdu & English', icon: 'hand-left-outline' },
@@ -25,13 +27,14 @@ export function MoreSheet({ app, visible, onClose }: { app: AppCtx; visible: boo
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: t.scrim }]} onPress={onClose} accessibilityLabel="Close menu" />
       <View style={[styles.sheet, { backgroundColor: t.sheet, paddingBottom: insets.bottom + 18 }]}>
         <View style={[styles.handle, { backgroundColor: t.line }]} />
-        <ScrollView style={{ maxHeight: 560 }} contentContainerStyle={{ gap: 2 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ maxHeight: 620 }} contentContainerStyle={{ gap: 2 }} showsVerticalScrollIndicator={false}>
         {ITEMS.map((it) => (
           <Pressable
             key={it.view}
             onPress={() => {
               onClose();
-              app.navigate(it.view);
+              if (it.view === 'reciter') app.openReciters();
+              else app.navigate(it.view);
             }}
             style={({ pressed }) => [styles.row, pressed && { backgroundColor: t.activeBg }]}
           >
@@ -40,7 +43,7 @@ export function MoreSheet({ app, visible, onClose }: { app: AppCtx; visible: boo
             </View>
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={[styles.label, { color: t.text }]}>{it.label}</Text>
-              <Text style={[styles.sub, { color: t.muted }]}>{it.sub}</Text>
+              <Text style={[styles.sub, { color: t.muted }]}>{it.view === 'reciter' ? app.reciterName : it.sub}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={t.muted} />
           </Pressable>

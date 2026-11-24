@@ -1,15 +1,17 @@
-// Full Now playing screen: medallion, title, seek bar, controls, speed / sleep / repeat, up next.
-// Swipe left (or tap "Quran text") to read along with the surah that is playing.
+// Full Now playing screen: medallion, title, reciter, seek bar, controls, speed / sleep / repeat / note,
+// and every part of the surah (listened ones ticked). When a part ends: "Up next in 5 s".
+// Swipe left (or tap "Quran text") to read along; with an Arabic reciter the ayah being recited is highlighted.
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text as RNText, TextProps, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RECITERS } from '../config';
 import { formatTime } from '../library';
 import { surahInfo } from '../surahs';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
-import { Medallion } from '../ui';
+import { EqBars, HoverPressable, Medallion } from '../ui';
+
+const Text = (p: TextProps) => <RNText maxFontSizeMultiplier={1.3} {...p} />;
 import { PlayerTextPage } from './ReadScreens';
 
 export function PlayerScreen({ app }: { app: AppCtx }) {
@@ -27,9 +29,14 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
   if (!track) return null;
 
   const info = surahInfo(track.surah);
-  const pct = app.duration ? Math.min(1, app.currentTime / app.duration) : 0;
+  const ar = app.arabicPos;
+  const partPct = app.duration ? Math.min(1, app.currentTime / app.duration) : 0;
+  const pct = ar ? Math.min(1, (ar.i + partPct) / ar.n) : partPct;
   const saved = app.isBookmarked(track.id);
-  const next = app.index != null ? app.tracks[app.index + 1] : undefined;
+  const parts = app.groups.find((g) => g.info.n === track.surah)?.parts ?? [];
+  const nextAfter = app.index != null ? app.tracks[app.index + 1] : undefined;
+  const nextOther = nextAfter && nextAfter.surah !== track.surah ? nextAfter : undefined;
+  const listenedHere = parts.filter((p) => app.listened.has(p.track.id)).length;
   const speedText = `${app.speed}×`;
   const sleepText =
     app.sleep.kind === 'off'
@@ -63,7 +70,7 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         </View>
         <Pressable
           onPress={app.toggleBookmark}
-          accessibilityLabel={saved ? 'Remove bookmark' : 'Bookmark this moment'}
+          accessibilityLabel={ar ? (saved ? 'Remove bookmark from this ayah' : 'Bookmark this ayah') : saved ? 'Remove bookmark' : 'Bookmark this moment'}
           style={[styles.roundBtn, { backgroundColor: t.surface, borderColor: t.line }]}
         >
           <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={t.goldText} />
@@ -79,7 +86,11 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         onLayout={(e) => (setPageW(e.nativeEvent.layout.width), setPageH(e.nativeEvent.layout.height))}
         onMomentumScrollEnd={(e) => pageW && setPage(Math.round(e.nativeEvent.contentOffset.x / pageW))}
       >
-      <View style={[styles.page, { width: pageW || undefined, height: pageH || undefined }]}>
+      <ScrollView
+        style={{ width: pageW || undefined, height: pageH || undefined }}
+        contentContainerStyle={[styles.inner, { paddingHorizontal: 24, flexGrow: 1, paddingBottom: 12 }]}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={{ marginTop: 26 }}>
         <Medallion t={t} ar={info.ar} surah={info.n} />
       </View>
@@ -89,13 +100,28 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
           {app.label(track)}
         </Text>
         <Text style={[styles.sub, { color: t.muted }]} numberOfLines={1}>
-          {[app.ayahText(track), `${RECITERS} · Urdu`].filter(Boolean).join(' · ')}
+          {ar ? `Ayah ${ar.ayah} · ${ar.i + 1} of ${ar.n} in this part` : app.ayahText(track)}
         </Text>
+        <Pressable
+          onPress={app.openReciters}
+          accessibilityLabel={`Reciter: ${app.reciterName}. Change reciter`}
+          style={[styles.reciter, { backgroundColor: t.surface, borderColor: t.line }]}
+        >
+          <Ionicons name="headset-outline" size={16} color={t.goldText} />
+          <Text style={[styles.reciterText, { color: t.text }]} numberOfLines={1}>
+            {app.reciterName}
+          </Text>
+          <Ionicons name="chevron-down" size={15} color={t.muted} />
+        </Pressable>
       </View>
 
       <Pressable
         onLayout={(e) => setBarW(e.nativeEvent.layout.width)}
-        onPress={(e) => app.duration && app.seek((e.nativeEvent.locationX / barW) * app.duration)}
+        onPress={(e) => {
+          const f = Math.max(0, Math.min(1, e.nativeEvent.locationX / barW));
+          if (ar) app.goAyah(Math.min(ar.n - 1, Math.floor(f * ar.n)));
+          else if (app.duration) app.seek(f * app.duration);
+        }}
         accessibilityLabel="Seek"
         style={styles.barHit}
       >
@@ -110,19 +136,21 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         />
       </Pressable>
       <View style={styles.times}>
-        <Text style={[styles.time, { color: t.muted }]}>{formatTime(app.currentTime)}</Text>
+        <Text style={[styles.time, { color: t.muted }]}>{ar ? `Ayah ${ar.ayah}` : formatTime(app.currentTime)}</Text>
         <Text style={[styles.time, { color: t.muted }]}>
           {app.buffering && app.playing
             ? 'Loading…'
-            : app.duration
-              ? `−${formatTime(Math.max(0, app.duration - app.currentTime))}`
-              : ''}
+            : ar
+              ? `${ar.n - ar.i - 1} ayah${ar.n - ar.i - 1 === 1 ? '' : 's'} left`
+              : app.duration
+                ? `−${formatTime(Math.max(0, app.duration - app.currentTime))}`
+                : ''}
         </Text>
       </View>
 
       <View style={styles.controls}>
         <Ctrl icon="play-skip-back" label="Previous part" color={t.ctrl} onPress={() => app.go(-1)} size={26} />
-        <Ctrl icon="play-back" label="Back 10 seconds" color={t.ctrl} onPress={() => app.skip(-10)} size={30} />
+        <Ctrl icon="play-back" label={ar ? 'Previous ayah' : 'Back 10 seconds'} num={ar ? '' : '10'} color={t.ctrl} onPress={() => app.skip(-10)} size={30} />
         <Pressable
           onPress={app.playPause}
           accessibilityLabel={app.playing ? 'Pause' : 'Play'}
@@ -130,7 +158,7 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         >
           <Ionicons name={app.playing ? 'pause' : 'play'} size={34} color={t.playIcon} style={app.playing ? null : { marginLeft: 4 }} />
         </Pressable>
-        <Ctrl icon="play-forward" label="Forward 10 seconds" color={t.ctrl} onPress={() => app.skip(10)} size={30} />
+        <Ctrl icon="play-forward" label={ar ? 'Next ayah' : 'Forward 10 seconds'} num={ar ? '' : '10'} color={t.ctrl} onPress={() => app.skip(10)} size={30} />
         <Ctrl icon="play-skip-forward" label="Next part" color={t.ctrl} onPress={() => app.go(1)} size={26} />
       </View>
 
@@ -172,17 +200,60 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         </Pressable>
       </View>
 
+      {parts.length > 1 && (
+        <View style={{ marginTop: 22, gap: 6 }}>
+          <View style={styles.partsHead}>
+            <Text style={[styles.partsTitle, { color: t.text }]}>All parts · {info.name}</Text>
+            <Text style={[styles.partsCount, { color: t.muted }]}>
+              {listenedHere} of {parts.length} listened
+            </Text>
+          </View>
+          {parts.map(({ track: p, i }) => {
+            const on = i === app.index;
+            const done = app.listened.has(p.id);
+            const isNext = app.index != null && i === app.index + 1;
+            return (
+              <HoverPressable
+                key={p.id}
+                onPress={() => (on ? app.playPause() : app.pick(i))}
+                accessibilityLabel={`Part ${p.part}, ${app.ayahText(p)}${on ? ', playing' : done ? ', listened' : ''}`}
+                style={[styles.partRow, { backgroundColor: on ? t.activeBg : t.surface, borderColor: on ? t.green : t.line }]}
+                hoverStyle={{ backgroundColor: on ? t.activeBg : t.segment }}
+              >
+                <View style={[styles.partDot, { backgroundColor: on ? t.header : done ? t.green : t.segment }]}>
+                  {on ? (
+                    <EqBars color={t.gold} playing={app.playing} size={12} />
+                  ) : done ? (
+                    <Ionicons name="checkmark" size={15} color="#FFFFFF" />
+                  ) : (
+                    <Text style={[styles.partNum, { color: t.muted }]}>{p.part}</Text>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.partName, { color: on ? t.green : t.text }]}>Part {p.part}</Text>
+                  <Text style={[styles.partAyahs, { color: t.muted }]} numberOfLines={1}>
+                    {app.ayahText(p)}
+                  </Text>
+                </View>
+                <Text style={[styles.partTag, { color: on ? t.green : t.goldText }]}>
+                  {on ? (app.playing ? 'PLAYING' : 'PAUSED') : isNext ? 'Up next' : done ? 'Listened' : ''}
+                </Text>
+              </HoverPressable>
+            );
+          })}
+        </View>
+      )}
       <View style={{ flex: 1 }} />
-      {next ? (
-        <Pressable onPress={() => app.go(1)} style={[styles.upNext, { backgroundColor: t.surface, borderColor: t.line }]}>
-          <Text style={[styles.upLabel, { color: t.goldText }]}>UP NEXT</Text>
+      {nextOther ? (
+        <Pressable onPress={() => app.go(1)} style={[styles.upNext, { backgroundColor: t.surface, borderColor: t.line, marginTop: 16 }]}>
+          <Text style={[styles.upLabel, { color: t.goldText }]}>NEXT SURAH</Text>
           <Text style={[styles.upText, { color: t.text }]} numberOfLines={1}>
-            {next.surah === track.surah ? `Part ${next.part}` : app.label(next)} · {app.ayahText(next)}
+            {app.label(nextOther)} · {app.ayahText(nextOther)}
           </Text>
           <Ionicons name="play-skip-forward-outline" size={18} color={t.muted} />
         </Pressable>
       ) : null}
-      </View>
+      </ScrollView>
 
       <View style={[styles.page, { width: pageW || undefined, height: pageH || undefined, paddingTop: 14 }]}>
         <PlayerTextPage app={app} />
@@ -192,11 +263,13 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
               {app.label(track)}
             </Text>
             <Text style={[styles.miniSub, { color: t.headerMuted }]} numberOfLines={1}>
-              {formatTime(app.currentTime)}
-              {app.duration ? ` / ${formatTime(app.duration)}` : ''} · {RECITERS}
+              {ar ? `Ayah ${ar.ayah}` : `${formatTime(app.currentTime)}${app.duration ? ` / ${formatTime(app.duration)}` : ''}`} · {app.reciterName}
             </Text>
           </View>
-          <Pressable onPress={() => app.skip(-10)} accessibilityLabel="Back 10 seconds" hitSlop={6} style={styles.miniBtn}>
+          <Pressable onPress={app.openReciters} accessibilityLabel="Change reciter" hitSlop={6} style={styles.miniBtn}>
+            <Ionicons name="headset-outline" size={21} color={t.headerText} />
+          </Pressable>
+          <Pressable onPress={() => app.skip(-10)} accessibilityLabel={ar ? 'Previous ayah' : 'Back 10 seconds'} hitSlop={6} style={styles.miniBtn}>
             <Ionicons name="play-back" size={22} color={t.headerText} />
           </Pressable>
           <Pressable onPress={app.playPause} accessibilityLabel={app.playing ? 'Pause' : 'Play'} style={[styles.miniPlay, { backgroundColor: t.gold }]}>
@@ -205,6 +278,31 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         </View>
       </View>
       </ScrollView>
+      {app.upNext && (
+        <View style={[styles.overlay, { backgroundColor: t.scrim }]}>
+          <View style={[styles.upCard, { backgroundColor: t.sheet }]}>
+            <Text style={[styles.upLabel, { color: t.goldText }]}>UP NEXT</Text>
+            <Text style={[styles.upTitle, { color: t.text }]}>
+              {app.label(app.upNext.track)}
+            </Text>
+            <Text style={[styles.upText, { color: t.muted, flex: 0 }]}>
+              {app.ayahText(app.upNext.track)} · starts in {app.upNext.left} s
+            </Text>
+            <View style={[styles.countBar, { backgroundColor: t.track }]}>
+              <View style={{ width: `${(app.upNext.left / 5) * 100}%`, height: 4, backgroundColor: t.accent }} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={app.playUpNext} style={[styles.upBtn, { backgroundColor: t.header }]}>
+                <Ionicons name="play" size={16} color={t.gold} />
+                <Text style={[styles.upBtnText, { color: t.headerText }]}>Play now</Text>
+              </Pressable>
+              <Pressable onPress={app.cancelUpNext} style={[styles.upBtn, { backgroundColor: t.surface, borderWidth: 1, borderColor: t.line }]}>
+                <Text style={[styles.upBtnText, { color: t.text }]}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -215,9 +313,11 @@ function Ctrl({
   color,
   size,
   onPress,
+  num = '10',
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  num?: string;
   color: string;
   size: number;
   onPress: () => void;
@@ -225,8 +325,8 @@ function Ctrl({
   return (
     <Pressable onPress={onPress} accessibilityLabel={label} hitSlop={8} style={styles.ctrl}>
       <Ionicons name={icon} size={size} color={color} />
-      {(icon === 'play-back' || icon === 'play-forward') && (
-        <Text style={[styles.ctrlNum, { color }]}>10</Text>
+      {(icon === 'play-back' || icon === 'play-forward') && !!num && (
+        <Text style={[styles.ctrlNum, { color }]}>{num}</Text>
       )}
     </Pressable>
   );
@@ -266,4 +366,22 @@ const styles = StyleSheet.create({
   upNext: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1 },
   upLabel: { fontFamily: FONTS.semibold, fontSize: 11, letterSpacing: 0.9 },
   upText: { flex: 1, fontFamily: FONTS.body, fontSize: 13 },
+  inner: { width: '100%', maxWidth: 680, alignSelf: 'center' },
+  reciter: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 38, paddingHorizontal: 14, borderRadius: 19, borderWidth: 1, maxWidth: '100%' },
+  reciterText: { fontFamily: FONTS.semibold, fontSize: 13, flexShrink: 1 },
+  partsHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 2 },
+  partsTitle: { flex: 1, fontFamily: FONTS.display, fontSize: 19 },
+  partsCount: { fontFamily: FONTS.body, fontSize: 12 },
+  partRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 54, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1.5 },
+  partDot: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  partNum: { fontFamily: FONTS.bold, fontSize: 12 },
+  partName: { fontFamily: FONTS.semibold, fontSize: 14 },
+  partAyahs: { fontFamily: FONTS.body, fontSize: 12 },
+  partTag: { fontFamily: FONTS.bold, fontSize: 11 },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', padding: 20 },
+  upCard: { borderRadius: 22, padding: 18, gap: 10, width: '100%', maxWidth: 480, alignSelf: 'center', elevation: 12 },
+  upTitle: { fontFamily: FONTS.display, fontSize: 22 },
+  countBar: { height: 4, borderRadius: 2, overflow: 'hidden' },
+  upBtn: { flex: 1, minHeight: 48, borderRadius: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  upBtnText: { fontFamily: FONTS.semibold, fontSize: 15 },
 });

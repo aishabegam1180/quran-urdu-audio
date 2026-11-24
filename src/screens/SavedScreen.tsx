@@ -1,6 +1,6 @@
 // Bookmarks with the exact time: tap ▶ time to continue from that point.
 import { Ionicons } from '@expo/vector-icons';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, FlatListProps, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bookmark, formatTime } from '../library';
 import { FONTS } from '../theme';
@@ -9,7 +9,17 @@ import { ScreenHeader, StarBadge } from '../ui';
 import { shortDate } from './NotesScreen';
 
 /** The list itself, also shown in the Saved tab on the home screen. */
-export function SavedList({ app, bottomPad, header }: { app: AppCtx; bottomPad: number; header?: React.ReactElement }) {
+export function SavedList({
+  app,
+  bottomPad,
+  header,
+  onScroll,
+}: {
+  app: AppCtx;
+  bottomPad: number;
+  header?: React.ReactElement;
+  onScroll?: FlatListProps<unknown>['onScroll'];
+}) {
   const { t } = app;
   const items = [...app.bookmarks]
     .sort((a, b) => b.savedAt - a.savedAt)
@@ -27,6 +37,8 @@ export function SavedList({ app, bottomPad, header }: { app: AppCtx; bottomPad: 
       data={items}
       keyExtractor={(x) => x.b.trackId}
       ListHeaderComponent={header}
+      onScroll={onScroll}
+      scrollEventThrottle={32}
       contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomPad, gap: 8 }}
       ListEmptyComponent={
         <Text style={[styles.empty, { color: t.muted }]}>

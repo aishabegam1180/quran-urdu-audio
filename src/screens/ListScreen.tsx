@@ -1,8 +1,20 @@
-// Home screen: header with Continue listening, search, Surahs / Juz / Saved tabs,
-// the surah list (multi-part surahs open into their parts) and the mini player.
+// Home screen: header (shrinks to one line when the list is scrolled), search, Surahs / Juz / Saved tabs,
+// the surah list (multi-part surahs open into their parts; the one playing glows) and one player bar.
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  LayoutAnimation,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text as RNText,
+  TextInput,
+  TextProps,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RECITERS } from '../config';
 import { Track, formatTime } from '../library';
@@ -11,7 +23,11 @@ import { JUZ, searchKey } from '../surahs';
 import { VerseOfDayCard } from './ReadScreens';
 import { FONTS } from '../theme';
 import { AppCtx, Part, SurahGroup } from '../types';
-import { HeaderPattern, StarBadge } from '../ui';
+import { EqBars, HeaderPattern, HoverPressable, StarBadge } from '../ui';
+
+// Labels grow with the phone's text size but are capped, so large text doesn't push the list off the screen.
+const Text = (p: TextProps) => <RNText maxFontSizeMultiplier={1.3} {...p} />;
+const MAX_W = 760; // tablets and laptops: keep the list a readable width
 
 type Tab = 'Surahs' | 'Juz' | 'Saved';
 
@@ -24,6 +40,19 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
   const listRef = useRef<FlatList<SurahGroup>>(null);
   const [headerW, setHeaderW] = useState(400);
   const [headerH, setHeaderH] = useState(260);
+  const [miniH, setMiniH] = useState(76);
+  // the big header folds into one line once the list is scrolled, and comes back at the top
+  const [compact, setCompact] = useState(false);
+  const compactRef = useRef(false);
+  const onScroll = useRef((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const want = compactRef.current ? y > 8 : y > 80;
+    if (want !== compactRef.current) {
+      compactRef.current = want;
+      LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
+      setCompact(want);
+    }
+  }).current;
 
   // open the surah that is playing when the app starts
   const startSurah = app.track?.surah;
@@ -60,37 +89,18 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
 
   // only redraw list rows when something they show changes (not on every progress tick)
   const listExtra = useMemo(
-    () => ({ open, index: app.index, playing: app.playing, downloading: app.downloading, isDownloaded: app.isDownloaded, t }),
-    [open, app.index, app.playing, app.downloading, app.isDownloaded, t],
+    () => ({ open, index: app.index, playing: app.playing, downloading: app.downloading, isDownloaded: app.isDownloaded, t, listened: app.listened }),
+    [open, app.index, app.playing, app.downloading, app.isDownloaded, t, app.listened],
   );
 
-  const pct = app.duration ? Math.min(1, app.currentTime / app.duration) : 0;
+  const pct = app.arabicPos
+    ? Math.min(1, (app.arabicPos.i + (app.duration ? app.currentTime / app.duration : 0)) / app.arabicPos.n)
+    : app.duration
+      ? Math.min(1, app.currentTime / app.duration)
+      : 0;
 
   // ---------- pieces ----------
-  const header = (
-    <View
-      style={[styles.header, { backgroundColor: t.header, paddingTop: insets.top + 16 }]}
-      onLayout={(e) => (setHeaderW(e.nativeEvent.layout.width), setHeaderH(e.nativeEvent.layout.height))}
-    >
-      <HeaderPattern color={t.gold} width={headerW} height={headerH} />
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text style={[styles.headerAr, { color: t.gold }]}>القرآن الكريم</Text>
-          <Text style={[styles.h1, { color: t.headerText }]}>Quran Safar</Text>
-          <Text style={[styles.h2, { color: t.headerMuted }]}>Urdu Tarjuma · {RECITERS}</Text>
-          <Pressable
-            onPress={() => app.navigate('streak')}
-            accessibilityLabel={`Daily streak: ${app.streak.current} ${app.streak.current === 1 ? 'day' : 'days'}. Open streak.`}
-            style={[styles.streakBtn, { borderColor: app.streak.doneToday ? 'rgba(242,181,74,0.7)' : t.headerLine, backgroundColor: app.streak.doneToday ? 'rgba(242,181,74,0.18)' : 'transparent' }]}
-          >
-            <Ionicons name={app.streak.doneToday ? 'flame' : 'flame-outline'} size={16} color="#F2B54A" />
-            <Text style={[styles.streakText, { color: t.headerText }]}>
-              {app.streak.current > 0
-                ? `${app.streak.current}-day streak${app.streak.doneToday ? '' : ' · listen 1 min today'}`
-                : 'Start your daily streak · listen 1 min'}
-            </Text>
-          </Pressable>
-        </View>
+  const buttons = (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
             onPress={app.toggleTheme}
@@ -121,6 +131,43 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
             <Ionicons name="menu" size={21} color={t.headerText} />
           </Pressable>
         </View>
+  );
+
+  const header = compact ? (
+    <View style={[styles.header, styles.headerCompact, { backgroundColor: t.header, paddingTop: insets.top + 8 }]}>
+      <View style={[styles.headerRow, styles.inner, { alignItems: 'center' }]}>
+        <Text style={[styles.h1Small, { color: t.headerText, flex: 1 }]} numberOfLines={1}>
+          Quran Safar
+        </Text>
+        {buttons}
+      </View>
+    </View>
+  ) : (
+    <View
+      style={[styles.header, { backgroundColor: t.header, paddingTop: insets.top + 16 }]}
+      onLayout={(e) => (setHeaderW(e.nativeEvent.layout.width), setHeaderH(e.nativeEvent.layout.height))}
+    >
+      <HeaderPattern color={t.gold} width={headerW} height={headerH} />
+      <View style={styles.inner}>
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={[styles.headerAr, { color: t.gold }]}>القرآن الكريم</Text>
+          <Text style={[styles.h1, { color: t.headerText }]}>Quran Safar</Text>
+          <Text style={[styles.h2, { color: t.headerMuted }]}>Urdu Tarjuma · {RECITERS}</Text>
+          <Pressable
+            onPress={() => app.navigate('streak')}
+            accessibilityLabel={`Daily streak: ${app.streak.current} ${app.streak.current === 1 ? 'day' : 'days'}. Open streak.`}
+            style={[styles.streakBtn, { borderColor: app.streak.doneToday ? 'rgba(242,181,74,0.7)' : t.headerLine, backgroundColor: app.streak.doneToday ? 'rgba(242,181,74,0.18)' : 'transparent' }]}
+          >
+            <Ionicons name={app.streak.doneToday ? 'flame' : 'flame-outline'} size={16} color="#F2B54A" />
+            <Text style={[styles.streakText, { color: t.headerText }]}>
+              {app.streak.current > 0
+                ? `${app.streak.current}-day streak${app.streak.doneToday ? '' : ' · listen 1 min today'}`
+                : 'Start your daily streak · listen 1 min'}
+            </Text>
+          </Pressable>
+        </View>
+        {buttons}
       </View>
 
       {!!app.hijriText && (
@@ -144,40 +191,17 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         </Pressable>
       )}
 
-      {app.track && (
-        <Pressable
-          onPress={() => (app.playing ? null : app.playPause(), app.openPlayer())}
-          style={[styles.continueCard, { backgroundColor: t.card, borderColor: t.headerLine }]}
-        >
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={[styles.eyebrow, { color: t.gold }]}>
-              {app.playing ? 'NOW LISTENING' : 'CONTINUE LISTENING'}
-            </Text>
-            <Text style={[styles.cardTitle, { color: t.headerText }]} numberOfLines={1}>
-              {app.label(app.track)}
-            </Text>
-            <Text style={[styles.cardSub, { color: t.headerMuted }]} numberOfLines={1}>
-              {app.ayahText(app.track)}
-              {app.duration ? ` · ${formatTime(app.currentTime)} of ${formatTime(app.duration)}` : ''}
-            </Text>
-            <View style={[styles.cardBar, { backgroundColor: t.headerLine }]}>
-              <View style={{ width: `${pct * 100}%`, height: 4, backgroundColor: t.gold }} />
-            </View>
-          </View>
-          <View style={[styles.cardPlay, { backgroundColor: t.gold }]}>
-            <Ionicons name={app.playing ? 'pause' : 'play'} size={22} color={t.onGold} style={app.playing ? null : { marginLeft: 3 }} />
-          </View>
-        </Pressable>
-      )}
+      </View>
     </View>
   );
 
   const todayKey = `${app.today.getFullYear()}-${app.today.getMonth() + 1}-${app.today.getDate()}`;
-  const showVerse = !query && app.reading.votdHidden !== todayKey;
+  const showVerse = !query && !compact && tab !== 'Saved' && app.reading.votdHidden !== todayKey;
 
   const tabs = (
-    <View style={{ paddingHorizontal: 20, paddingTop: showVerse ? 0 : 16, gap: 14 }}>
+    <View style={[styles.inner, { paddingHorizontal: 20, paddingTop: showVerse ? 0 : compact ? 10 : 16, gap: compact ? 10 : 14 }]}>
       {showVerse && <VerseOfDayCard app={app} />}
+      {tab !== 'Saved' && (
       <View style={[styles.search, { backgroundColor: t.surface, borderColor: t.line }]}>
         <Ionicons name="search" size={18} color={t.muted} />
         <TextInput
@@ -195,6 +219,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
           </Pressable>
         )}
       </View>
+      )}
       <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 6 }}>
         {(['Surahs', 'Juz', 'Saved'] as Tab[]).map((label) => {
           const on = tab === label;
@@ -231,11 +256,13 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
 
   const partRow = ({ track: tr, i }: Part, withSurah = false) => {
     const active = i === app.index;
+    const done = app.listened.has(tr.id);
     return (
-      <Pressable
+      <HoverPressable
         key={tr.id}
         onPress={() => app.pick(i)}
-        style={[styles.partRow, { backgroundColor: active ? t.activeBg : 'transparent' }]}
+        style={[styles.partRow, { backgroundColor: active ? t.activeBg : 'transparent', borderColor: active ? t.green : 'transparent' }]}
+        hoverStyle={{ backgroundColor: active ? t.activeBg : t.segment }}
       >
         <Text style={[styles.partName, { color: t.text }]} numberOfLines={1}>
           {withSurah ? app.label(tr) : `Part ${tr.part}`}
@@ -243,11 +270,15 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         <Text style={[styles.partAyahs, { color: t.muted }]} numberOfLines={1}>
           {app.ayahText(tr)}
         </Text>
-        {active && app.playing && <Ionicons name="stats-chart" size={14} color={t.green} accessibilityLabel="Now playing" />}
+        {active ? (
+          <EqBars color={t.green} playing={app.playing} size={14} />
+        ) : done ? (
+          <Ionicons name="checkmark" size={15} color={t.green} accessibilityLabel="Listened" />
+        ) : null}
         <Pressable onPress={() => app.toggleDownload(tr)} hitSlop={12} accessibilityLabel="Download for offline">
           {dlIcon(tr)}
         </Pressable>
-      </Pressable>
+      </HoverPressable>
     );
   };
 
@@ -269,20 +300,25 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         style={[
           styles.surahCard,
           {
-            backgroundColor: isOpen ? t.surface : playingHere && !multi ? t.activeBg : 'transparent',
-            borderColor: isOpen ? t.line : 'transparent',
+            backgroundColor: playingHere ? t.activeBg : isOpen ? t.surface : 'transparent',
+            borderColor: playingHere ? t.green : isOpen ? t.line : 'transparent',
+            borderWidth: playingHere ? 1.5 : 1,
           },
         ]}
       >
-        <Pressable
+        <HoverPressable
           onPress={() => (multi ? setOpen(isOpen ? null : g.info.n) : app.pick(g.parts[0].i))}
-          style={styles.surahRow}
+          style={[styles.surahRow, { borderRadius: 15 }]}
+          hoverStyle={{ backgroundColor: playingHere ? 'transparent' : t.segment }}
         >
           <StarBadge n={g.info.n} t={t} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[styles.surahName, { color: t.text }]} numberOfLines={1}>
-              {g.info.name}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={[styles.surahName, { color: playingHere ? t.green : t.text, flexShrink: 1 }]} numberOfLines={1}>
+                {g.info.name}
+              </Text>
+              {playingHere && <EqBars color={t.green} playing={app.playing} size={13} />}
+            </View>
             <Text style={[styles.surahMeta, { color: t.muted }]} numberOfLines={1}>
               {meta}
             </Text>
@@ -295,7 +331,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
               {dlIcon(g.parts[0].track)}
             </Pressable>
           )}
-        </Pressable>
+        </HoverPressable>
         {isOpen && <View style={styles.parts}>{g.parts.map((p) => partRow(p))}</View>}
       </View>
     );
@@ -307,7 +343,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
     </View>
   );
 
-  const padBottom = (app.track ? 100 : 24) + insets.bottom;
+  const padBottom = (app.track ? miniH + 30 : 24) + insets.bottom;
   const bottomPad = { paddingBottom: padBottom };
 
   // The surah list is rebuilt only when what it shows changes, not on every
@@ -320,8 +356,10 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         keyExtractor={(g) => String(g.info.n)}
         renderItem={surahRow}
         extraData={listExtra}
-        contentContainerStyle={[styles.listPad, { paddingBottom: padBottom }]}
+        contentContainerStyle={[styles.listPad, styles.inner, { paddingBottom: padBottom }]}
         keyboardShouldPersistTaps="handled"
+        onScroll={onScroll}
+        scrollEventThrottle={32}
         onScrollToIndexFailed={() => {}}
         ListEmptyComponent={empty('No surah matches your search.')}
         initialNumToRender={14}
@@ -341,9 +379,11 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
       <FlatList
         data={juzRows}
         keyExtractor={(j) => String(j.n)}
-        contentContainerStyle={[styles.listPad, bottomPad]}
+        contentContainerStyle={[styles.listPad, styles.inner, bottomPad]}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
         renderItem={({ item: j }) => (
-          <Pressable onPress={() => j.i >= 0 && app.pick(j.i)} style={styles.surahRow}>
+          <HoverPressable onPress={() => j.i >= 0 && app.pick(j.i)} style={[styles.surahRow, { borderRadius: 15 }]} hoverStyle={{ backgroundColor: t.segment }}>
             <StarBadge n={j.n} t={t} />
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={[styles.surahName, { color: t.text }]}>Para {j.n} · {j.name}</Text>
@@ -352,11 +392,11 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
               </Text>
             </View>
             <Ionicons name="play-circle-outline" size={24} color={t.green} />
-          </Pressable>
+          </HoverPressable>
         )}
       />
     );
-  else body = <SavedList app={app} bottomPad={padBottom} />;
+  else body = <SavedList app={app} bottomPad={padBottom} onScroll={onScroll} />;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
@@ -367,25 +407,42 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
       {app.track && (
         <Pressable
           onPress={app.openPlayer}
+          onLayout={(e) => setMiniH(e.nativeEvent.layout.height)}
+          accessibilityLabel={`${app.playing ? 'Now playing' : 'Continue listening'}: ${app.label(app.track)}. Open player`}
           style={[styles.mini, { backgroundColor: t.mini, bottom: 14 + insets.bottom }]}
         >
-          <View style={{ flex: 1, gap: 3 }}>
-            <Text style={[styles.miniTitle, { color: t.miniText }]} numberOfLines={1}>
-              {app.label(app.track)}
-            </Text>
-            <Text style={[styles.miniSub, { color: t.miniMuted }]} numberOfLines={1}>
-              {app.sleep.kind !== 'off'
-                ? `Sleep timer · ${app.sleep.kind === 'end' ? 'end of part' : `${Math.ceil(app.sleepLeft / 60)} min`}`
-                : `${RECITERS} · Urdu`}
-            </Text>
+          <View style={[styles.miniInner, styles.inner]}>
+            <View style={{ width: 22, alignItems: 'center' }}>
+              <EqBars color={t.gold} playing={app.playing} size={18} />
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[styles.miniEyebrow, { color: t.gold }]} numberOfLines={1}>
+                {app.upNext ? `UP NEXT IN ${app.upNext.left} S` : app.playing ? 'NOW PLAYING' : 'CONTINUE LISTENING'}
+              </Text>
+              <Text style={[styles.miniTitle, { color: t.miniText }]} numberOfLines={1}>
+                {app.label(app.upNext?.track ?? app.track)}
+              </Text>
+              <Text style={[styles.miniSub, { color: t.miniMuted }]} numberOfLines={1}>
+                {app.sleep.kind !== 'off'
+                  ? `Sleep timer · ${app.sleep.kind === 'end' ? 'end of part' : `${Math.ceil(app.sleepLeft / 60)} min`}`
+                  : app.arabicPos
+                    ? `Ayah ${app.arabicPos.ayah} · ${app.reciterName}`
+                    : app.duration
+                      ? `${formatTime(app.currentTime)} of ${formatTime(app.duration)} · ${app.reciterName}`
+                      : app.reciterName}
+              </Text>
+            </View>
+            <Pressable
+              onPress={app.playPause}
+              accessibilityLabel={app.playing ? 'Pause' : 'Play'}
+              style={[styles.miniPlay, { backgroundColor: t.gold }]}
+            >
+              <Ionicons name={app.playing ? 'pause' : 'play'} size={20} color={t.onGold} style={app.playing ? null : { marginLeft: 2 }} />
+            </Pressable>
           </View>
-          <Pressable
-            onPress={app.playPause}
-            accessibilityLabel={app.playing ? 'Pause' : 'Play'}
-            style={[styles.miniPlay, { backgroundColor: t.gold }]}
-          >
-            <Ionicons name={app.playing ? 'pause' : 'play'} size={20} color={t.onGold} style={app.playing ? null : { marginLeft: 2 }} />
-          </Pressable>
+          <View style={[styles.miniBar, { backgroundColor: t.headerLine }]}>
+            <View style={{ width: `${pct * 100}%`, height: 3, backgroundColor: t.gold }} />
+          </View>
         </Pressable>
       )}
     </View>
@@ -395,6 +452,9 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: { paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
+  headerCompact: { paddingBottom: 10, borderBottomLeftRadius: 22, borderBottomRightRadius: 22 },
+  inner: { width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
+  h1Small: { fontFamily: FONTS.display, fontSize: 22 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   headerAr: { fontFamily: FONTS.arabic, fontSize: 22, lineHeight: 32 },
   h1: { fontFamily: FONTS.display, fontSize: 30, lineHeight: 34 },
@@ -407,12 +467,6 @@ const styles = StyleSheet.create({
   streakBtn: { alignSelf: 'flex-start', marginTop: 6, minHeight: 32, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
   streakText: { fontFamily: FONTS.semibold, fontSize: 12 },
   bulkText: { fontFamily: FONTS.bold, fontSize: 11 },
-  continueCard: { marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 18, borderWidth: 1 },
-  eyebrow: { fontFamily: FONTS.semibold, fontSize: 11, letterSpacing: 0.9 },
-  cardTitle: { fontFamily: FONTS.semibold, fontSize: 16 },
-  cardSub: { fontFamily: FONTS.body, fontSize: 12 },
-  cardBar: { marginTop: 6, height: 4, borderRadius: 2, overflow: 'hidden' },
-  cardPlay: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 46, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1 },
   searchInput: { flex: 1, fontFamily: FONTS.body, fontSize: 15, paddingVertical: 0 },
   pill: { height: 36, paddingHorizontal: 16, borderRadius: 18, borderWidth: 1, justifyContent: 'center' },
@@ -424,24 +478,15 @@ const styles = StyleSheet.create({
   surahMeta: { fontFamily: FONTS.body, fontSize: 12 },
   surahAr: { fontFamily: FONTS.arabic, fontSize: 20, lineHeight: 30 },
   parts: { paddingLeft: 64, paddingRight: 12, paddingBottom: 10, gap: 2 },
-  partRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 10, borderRadius: 12 },
+  partRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1 },
   partName: { fontFamily: FONTS.semibold, fontSize: 13, minWidth: 54, flexShrink: 1 },
   partAyahs: { flex: 1, fontFamily: FONTS.body, fontSize: 13 },
   empty: { padding: 32, alignItems: 'center' },
   emptyText: { fontFamily: FONTS.body, fontSize: 14, textAlign: 'center', lineHeight: 21 },
-  mini: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    paddingLeft: 16,
-    paddingRight: 10,
-    borderRadius: 20,
-    elevation: 10,
-  },
+  mini: { position: 'absolute', left: 12, right: 12, borderRadius: 20, elevation: 10, overflow: 'hidden' },
+  miniInner: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingLeft: 14, paddingRight: 10 },
+  miniEyebrow: { fontFamily: FONTS.semibold, fontSize: 10, letterSpacing: 0.8 },
+  miniBar: { height: 3 },
   miniTitle: { fontFamily: FONTS.semibold, fontSize: 14 },
   miniSub: { fontFamily: FONTS.body, fontSize: 12 },
   miniPlay: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },

@@ -42,7 +42,8 @@ export function AboutScreen({ app }: { app: AppCtx }) {
             'Urdu translation by Fateh Muhammad Jalandhari after every ayah',
             '55 duas from the Quran, with Arabic text from Tanzil.net, Urdu translation by Fateh Muhammad Jalandhari and English translation by Saheeh International',
             'Read the Quran in Indo-Pak script, with the Indo-Pak text and font by Ayman Siddiqui and R. Siddiqua (QuranWBW.com and Quran.com), Urdu by Fateh Muhammad Jalandhari and English by Saheeh International (via Tanzil.net)',
-            'Verse of the day and single-ayah recitation by Shaykh Mishary Rashid Alafasy (audio from the Islamic Network, alquran.cloud)',
+            'Ten Arabic reciters, ayah by ayah, with the ayah being recited highlighted: Mishary Rashid Alafasy, Abdur-Rahman As-Sudais, Sa\'ud Ash-Shuraym, Maher Al-Muaiqly, Mahmoud Khalil Al-Husary, Mohamed Siddiq Al-Minshawi, Abdul Basit Abdus-Samad, Abu Bakr Ash-Shaatree, Ahmed ibn Ali Al-Ajamy and Hani Ar-Rifai (audio from the Islamic Network, alquran.cloud). The verse of the day uses the same audio',
+            'Prayer times calculated on your phone with the open-source adhan library (Karachi method, Hanafi Asr)',
             'Offline listening, bookmarks, notes, Qibla direction, Tasbeeh, a daily streak and the Islamic date',
           ].map((line) => (
             <View key={line} style={styles.bullet}>

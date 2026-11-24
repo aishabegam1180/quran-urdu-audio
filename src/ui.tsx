@@ -1,8 +1,8 @@
 // Decorative pieces of the design: the eight-point star badge, the header
 // pattern and the gold medallion on the Now playing screen.
 import { Ionicons } from '@expo/vector-icons';
-import React, { memo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, PressableProps, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { FONTS, Theme } from './theme';
 
 function Star({ size, color, width, opacity = 1 }: { size: number; color: string; width: number; opacity?: number }) {
@@ -110,5 +110,55 @@ export function ScreenHeader({
       </View>
       {right}
     </View>
+  );
+}
+
+/** Three small bars that move while audio plays (and stand still when paused). */
+export function EqBars({ color, playing, size = 16 }: { color: string; playing: boolean; size?: number }) {
+  const bars = useRef([0, 1, 2].map(() => new Animated.Value(0.35))).current;
+  useEffect(() => {
+    if (!playing) {
+      bars.forEach((b) => b.setValue(0.35));
+      return;
+    }
+    const loops = bars.map((b, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 140),
+          Animated.timing(b, { toValue: 1, duration: 380, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(b, { toValue: 0.3, duration: 380, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ]),
+      ),
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [playing, bars]);
+  const w = Math.max(3, Math.round(size / 5));
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: size, gap: w * 0.6 }} accessibilityLabel={playing ? 'Playing' : 'Paused'}>
+      {bars.map((b, i) => (
+        <Animated.View
+          key={i}
+          style={{ width: w, height: size, borderRadius: w / 2, backgroundColor: color, transform: [{ translateY: size / 2 }, { scaleY: b }, { translateY: -size / 2 }] }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** A Pressable that lightens when a mouse moves over it (laptops, tablets with a mouse). */
+export function HoverPressable({
+  style,
+  hoverStyle,
+  ...rest
+}: Omit<PressableProps, 'style'> & { style?: StyleProp<ViewStyle>; hoverStyle: StyleProp<ViewStyle> }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <Pressable
+      {...rest}
+      onHoverIn={(e) => (setHover(true), rest.onHoverIn?.(e))}
+      onHoverOut={(e) => (setHover(false), rest.onHoverOut?.(e))}
+      style={({ pressed }) => [style, (hover || pressed) && hoverStyle]}
+    />
   );
 }

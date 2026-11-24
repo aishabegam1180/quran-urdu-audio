@@ -38,9 +38,18 @@ export function globalAyah(surah: number, ayah: number) {
   return ayahIndex(surah, ayah) + 1;
 }
 
-/** Mishary Rashid Alafasy, one ayah, from the Islamic Network (alquran.cloud) audio service. */
-export function ayahAudioUrl(surah: number, ayah: number) {
-  return `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${globalAyah(surah, ayah)}.mp3`;
+/** Ayahs covered by a track part: "Ayahs 1-141" → 1..141; empty → the whole surah. */
+export function partRange(ayahs: string, total: number) {
+  const m = ayahs.match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (m) return { from: Math.max(1, Number(m[1])), to: Math.min(total, Number(m[2])) };
+  const one = ayahs.match(/(\d+)/);
+  if (one) return { from: Number(one[1]), to: Number(one[1]) };
+  return { from: 1, to: total };
+}
+
+/** One ayah, from the Islamic Network (alquran.cloud) audio service. Mishary Rashid Alafasy unless another reciter is given. */
+export function ayahAudioUrl(surah: number, ayah: number, reciter = 'ar.alafasy') {
+  return `https://cdn.islamic.network/quran/audio/128/${reciter}/${globalAyah(surah, ayah)}.mp3`;
 }
 
 let loading: Promise<QuranText> | null = null;

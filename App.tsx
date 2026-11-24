@@ -44,7 +44,8 @@ import {
 } from './src/library';
 import { installCrashHandler, recordError, safe, takeLastCrash } from './src/crash';
 import { ErrorBoundary } from './src/ErrorBoundary';
-import { RECITERS } from './src/config';
+import { URDU, isArabic, reciterLabel } from './src/reciters';
+import { DEFAULT_PRAYER, PRAYER_KEY, PrayerSettings } from './src/prayer';
 import { arabicNumber } from './src/duas';
 import { HIJRI_MONTHS, HIJRI_MONTHS_AR, toHijri } from './src/hijri';
 import { askReminderPermission, refreshReminders } from './src/reminders';
@@ -65,7 +66,7 @@ import { DuasScreen } from './src/screens/DuasScreen';
 import { FeedbackScreen } from './src/screens/FeedbackScreen';
 import { IntroScreen } from './src/screens/IntroScreen';
 import { AyahSheet, ReadHomeScreen, ReadSurahScreen } from './src/screens/ReadScreens';
-import { ayahAudioUrl } from './src/quran';
+import { ayahAudioUrl, partRange } from './src/quran';
 import { DEFAULT_READ, ReadState, ayahKey, loadReading, saveReading } from './src/reading';
 import { ListScreen } from './src/screens/ListScreen';
 import { MoreSheet } from './src/screens/MoreSheet';
@@ -77,6 +78,8 @@ import { PlayerScreen } from './src/screens/PlayerScreen';
 import { SleepSheet } from './src/screens/SleepSheet';
 import { StreakScreen } from './src/screens/StreakScreen';
 import { TasbeehScreen } from './src/screens/TasbeehScreen';
+import { PrayerScreen } from './src/screens/PrayerScreen';
+import { ReciterSheet } from './src/screens/ReciterSheet';
 import { SURAHS, surahInfo } from './src/surahs';
 import { DARK, LIGHT } from './src/theme';
 import { AppCtx, Sleep, SurahGroup, View as Screen } from './src/types';
@@ -88,6 +91,8 @@ const SKIP_SECONDS = 10;
 const KEY_INTRO = 'intro.seen.v1';
 const STREAK_TICK = 5; // seconds of listening counted per tick
 const FADE_SECONDS = 10;
+const KEY_LISTENED = 'listened.v1';
+const UP_NEXT_SECONDS = 5;
 
 installCrashHandler();
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -154,6 +159,12 @@ function Main() {
   const [readTarget, setReadTarget] = useState<{ surah: number; ayah: number } | null>(null);
   const [ayahSheet, setAyahSheet] = useState<{ surah: number; ayah: number } | null>(null);
   const [ayahQueue, setAyahQueue] = useState<{ surah: number; list: number[]; i: number; range: string } | null>(null);
+  // Arabic-only reciter: the part is played ayah by ayah (list of ayah numbers, i = the one playing)
+  const [arabic, setArabic] = useState<{ list: number[]; i: number } | null>(null);
+  const [listened, setListened] = useState<Set<string>>(new Set());
+  const [upNext, setUpNext] = useState<{ i: number; at: number } | null>(null);
+  const [reciterSheet, setReciterSheet] = useState(false);
+  const [prayer, setPrayerState] = useState<PrayerSettings>(DEFAULT_PRAYER);
 
   const pendingSeek = useRef<number | null>(null);
   const lastSaved = useRef(0);
@@ -161,6 +172,10 @@ function Main() {
   const speedRef = useRef(1);
   const lockScreenOn = useRef(false);
   speedRef.current = settings.speed;
+  const reciter = isArabic(settings.reciter) ? settings.reciter : URDU;
+  const reciterRef = useRef(reciter);
+  reciterRef.current = reciter;
+  const viewRef = useRef<Screen>('list');
 
   const dark = settings.theme === 'system' ? scheme === 'dark' : settings.theme === 'dark';
   const t = dark ? DARK : LIGHT;
@@ -196,16 +211,29 @@ function Main() {
 
   // ---- load a track (optionally start at a position / autoplay) ----
   const loadTrack = useCallback(
-    (list: Track[], i: number, startAt = 0, autoplay = true) => {
+    (list: Track[], i: number, startAt = 0, autoplay = true, startAyah?: number) => {
       const tr = list[i];
       if (!tr) return;
       setIndex(i);
-      pendingSeek.current = startAt > 1 ? startAt : null;
+      setUpNext(null);
       lastSaved.current = Date.now();
-      safe('replace', () => player.replace(sourceFor(tr)));
+      const rec = reciterRef.current;
+      if (rec !== URDU) {
+        // Arabic reciter: play this part's ayahs one file at a time
+        const { from, to } = partRange(tr.ayahs, surahInfo(tr.surah).ayahs);
+        const ayahs = Array.from({ length: to - from + 1 }, (_, k) => from + k);
+        const k = startAyah != null ? Math.max(0, ayahs.indexOf(startAyah)) : 0;
+        setArabic({ list: ayahs, i: k });
+        pendingSeek.current = null;
+        safe('replace', () => player.replace({ uri: ayahAudioUrl(tr.surah, ayahs[k], rec) }));
+      } else {
+        setArabic(null);
+        pendingSeek.current = startAt > 1 ? startAt : null;
+        safe('replace', () => player.replace(sourceFor(tr)));
+      }
       safe('volume', () => (player.volume = 1));
       applySpeed();
-      const meta = { title: label(tr), artist: `${RECITERS} · Urdu`, albumTitle: 'Quran Safar' };
+      const meta = { title: label(tr), artist: reciterLabel(rec), albumTitle: 'Quran Safar' };
       // register lock-screen controls once; afterwards only change the title
       if (lockScreenOn.current) safe('lockscreen-update', () => player.updateLockScreenMetadata(meta));
       else
@@ -220,7 +248,7 @@ function Main() {
             return true;
           }) ?? false;
       if (autoplay) safe('play', () => player.play());
-      saveProgress(tr.id, startAt).catch(() => {});
+      saveProgress(tr.id, rec === URDU ? startAt : 0).catch(() => {});
     },
     [player, label, applySpeed],
   );
@@ -271,11 +299,18 @@ function Main() {
         AsyncStorage.getItem(KEY_INTRO).catch(() => '1'),
       ]);
       loadReading().then(setReadingState);
+      AsyncStorage.getItem(KEY_LISTENED)
+        .then((v) => v && setListened(new Set(JSON.parse(v))))
+        .catch(() => {});
+      AsyncStorage.getItem(PRAYER_KEY)
+        .then((v) => v && setPrayerState({ ...DEFAULT_PRAYER, ...JSON.parse(v) }))
+        .catch(() => {});
       setStreakData(st);
       refreshReminders(st); // keeps the next two weeks of reminders scheduled
       if (!seenIntro) setIntro(true);
       setSettings(s);
       speedRef.current = s.speed;
+      reciterRef.current = isArabic(s.reciter) ? s.reciter : URDU;
       setBookmarks(b);
       setNotes(n);
       setDuaFavs(f);
@@ -322,21 +357,21 @@ function Main() {
 
   // ---- save the position every 5 s while playing, and on pause ----
   useEffect(() => {
-    if (!track || pendingSeek.current != null || !status.isLoaded) return;
+    if (!track || arabic || pendingSeek.current != null || !status.isLoaded) return;
     const now = Date.now();
     if (!status.playing || now - lastSaved.current > 5000) {
       lastSaved.current = now;
       saveProgress(track.id, status.currentTime).catch(() => {});
     }
-  }, [status.currentTime, status.playing, status.isLoaded, track]);
+  }, [status.currentTime, status.playing, status.isLoaded, track, arabic]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s !== 'active' && track && status.isLoaded && pendingSeek.current == null)
+      if (s !== 'active' && track && !arabic && status.isLoaded && pendingSeek.current == null)
         safe('appstate', () => saveProgress(track.id, player.currentTime).catch(() => {}));
     });
     return () => sub.remove();
-  }, [track, player, status.isLoaded]);
+  }, [track, player, status.isLoaded, arabic]);
 
   // ---- daily streak: count listening time while the Quran is playing ----
   useEffect(() => {
@@ -392,6 +427,8 @@ function Main() {
 
   // single-ayah audio: plays the queued ayahs one after another, then stops
   const stopAyah = () => {
+    // with an Arabic reciter the "ayah playing" is the main player; stop that instead
+    if (!ayahQueue && arabic) return void safe('pause', () => player.pause());
     setAyahQueue(null);
     safe('ayah-stop', () => ayahPlayer.pause());
   };
@@ -400,7 +437,7 @@ function Main() {
     const list = Array.from({ length: to - from + 1 }, (_, k) => from + k);
     setAyahQueue({ surah, list, i: 0, range: rangeId ?? `${surah}:${from}` });
     safe('ayah-play', () => {
-      ayahPlayer.replace({ uri: ayahAudioUrl(surah, from) });
+      ayahPlayer.replace({ uri: ayahAudioUrl(surah, from, reciter === URDU ? undefined : reciter) });
       ayahPlayer.play();
     });
   };
@@ -410,11 +447,16 @@ function Main() {
     if (n >= ayahQueue.list.length) return setAyahQueue(null);
     setAyahQueue({ ...ayahQueue, i: n });
     safe('ayah-next', () => {
-      ayahPlayer.replace({ uri: ayahAudioUrl(ayahQueue.surah, ayahQueue.list[n]) });
+      ayahPlayer.replace({ uri: ayahAudioUrl(ayahQueue.surah, ayahQueue.list[n], reciter === URDU ? undefined : reciter) });
       ayahPlayer.play();
     });
   }, [ayahStatus.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
-  const ayahPlaying = ayahQueue ? ayahKey(ayahQueue.surah, ayahQueue.list[ayahQueue.i]) : null;
+  const arabicAyah = arabic && track ? arabic.list[arabic.i] : null;
+  const ayahPlaying = ayahQueue
+    ? ayahKey(ayahQueue.surah, ayahQueue.list[ayahQueue.i])
+    : track && arabicAyah != null && (status.playing || status.isBuffering)
+      ? ayahKey(track.surah, arabicAyah)
+      : null;
 
   const closeIntro = () => {
     setIntro(false);
@@ -422,20 +464,60 @@ function Main() {
   };
 
   // ---- when a part ends: repeat it, stop for the sleep timer, or continue ----
+  const markListened = (id: string) =>
+    setListened((l) => {
+      if (l.has(id)) return l;
+      const next = new Set(l).add(id);
+      AsyncStorage.setItem(KEY_LISTENED, JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
   useEffect(() => {
     if (!status.didJustFinish || index == null) return;
-    if (repeat) {
-      safe('repeat', () => {
-        player.seekTo(0)?.catch?.(() => {});
+    const tr = tracks[index];
+    // Arabic reciter: go on to the next ayah of this part
+    if (arabic && arabic.i + 1 < arabic.list.length) {
+      const k = arabic.i + 1;
+      setArabic({ ...arabic, i: k });
+      safe('ayah-next', () => {
+        player.replace({ uri: ayahAudioUrl(tr.surah, arabic.list[k], reciter) });
+        applySpeed();
         player.play();
       });
+      return;
+    }
+    markListened(tr.id);
+    if (repeat) {
+      if (arabic) loadTrack(tracks, index, 0, true);
+      else
+        safe('repeat', () => {
+          player.seekTo(0)?.catch?.(() => {});
+          player.play();
+        });
     } else if (sleep.kind === 'end') {
       setSleepState({ kind: 'off' });
       if (index + 1 < tracks.length) loadTrack(tracks, index + 1, 0, false);
-      else saveProgress(tracks[index].id, 0);
-    } else if (index + 1 < tracks.length) loadTrack(tracks, index + 1, 0, true);
-    else saveProgress(tracks[index].id, 0);
+      else saveProgress(tr.id, 0);
+    } else if (index + 1 < tracks.length) {
+      // on the player screen, show "Up next in 5 s" with Play now / Cancel; otherwise carry straight on
+      if (AppState.currentState === 'active' && viewRef.current === 'player')
+        setUpNext({ i: index + 1, at: Date.now() + UP_NEXT_SECONDS * 1000 });
+      else loadTrack(tracks, index + 1, 0, true);
+    } else saveProgress(tr.id, 0);
   }, [status.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the "Up next" countdown
+  const [, setTickNow] = useState(0);
+  useEffect(() => {
+    if (!upNext) return;
+    const id = setInterval(() => {
+      if (Date.now() >= upNext.at) {
+        clearInterval(id);
+        loadTrack(tracksRef.current, upNext.i, 0, true);
+      } else setTickNow(Date.now());
+    }, 250);
+    return () => clearInterval(id);
+  }, [upNext, loadTrack]);
+  const upNextLeft = upNext ? Math.max(0, Math.ceil((upNext.at - Date.now()) / 1000)) : 0;
 
   // ---- sleep timer: count down, fade out over the last 10 s, then pause ----
   useEffect(() => {
@@ -471,6 +553,7 @@ function Main() {
   // ---- Android back button: close sheets first, then go back to the list ----
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (reciterSheet) return setReciterSheet(false), true;
       if (menu) return setMenu(false), true;
       if (noteDraft) return setNoteDraft(null), true;
       if (ayahSheet) return setAyahSheet(null), true;
@@ -480,7 +563,9 @@ function Main() {
       return false;
     });
     return () => sub.remove();
-  }, [menu, noteDraft, ayahSheet, sheet, view]);
+  }, [menu, noteDraft, ayahSheet, sheet, view, reciterSheet]);
+
+  viewRef.current = view;
 
   // ---- keep the date fresh when the app comes back after midnight ----
   useEffect(() => {
@@ -498,6 +583,7 @@ function Main() {
 
   const playPause = () => {
     if (ayahQueue) stopAyah();
+    if (upNext) return loadTrack(tracks, upNext.i, 0, true);
     if (!track) return void (tracks.length && loadTrack(tracks, 0));
     ensureNotifPermission();
     safe('playpause', () => (status.playing ? player.pause() : player.play()));
@@ -505,8 +591,17 @@ function Main() {
 
   const skip = (delta: number) => {
     if (!track) return;
+    if (arabic) return goAyah(delta < 0 ? -1 : 1);
     const d = status.duration || Infinity;
     safe('skip', () => player.seekTo(Math.min(Math.max(0, status.currentTime + delta), d - 0.5))?.catch?.(() => {}));
+  };
+
+  const goAyah = (delta: number) => {
+    if (!track || !arabic) return;
+    const k = arabic.i + delta;
+    if (k < 0) return go(-1);
+    if (k >= arabic.list.length) return go(1);
+    loadTrack(tracks, index!, 0, true, arabic.list[k]);
   };
 
   const go = (delta: number) => {
@@ -605,7 +700,7 @@ function Main() {
     const i = indexById[trackId];
     if (i == null) return;
     ensureNotifPermission();
-    if (i === index && status.isLoaded) {
+    if (i === index && status.isLoaded && !arabic) {
       safe('seek', () => player.seekTo(position)?.catch?.(() => {}));
       safe('play', () => player.play());
     } else loadTrack(tracks, i, position, true);
@@ -620,6 +715,7 @@ function Main() {
   const isBookmarked = (id: string) => bookmarks.some((b) => b.trackId === id);
   const toggleBookmark = () => {
     if (!track) return;
+    if (arabicAyah != null) return toggleAyahMark(ayahKey(track.surah, arabicAyah));
     if (isBookmarked(track.id)) persistBookmarks(bookmarks.filter((b) => b.trackId !== track.id));
     else persistBookmarks([...bookmarks, { trackId: track.id, position: Math.floor(status.currentTime || 0), savedAt: Date.now() }]);
   };
@@ -678,6 +774,26 @@ function Main() {
       return next;
     });
 
+  const setReciter = (id: string) => {
+    const rec = isArabic(id) ? id : URDU;
+    setReciterSheet(false);
+    if (rec === reciter) return;
+    reciterRef.current = rec;
+    updateSettings({ reciter: rec });
+    if (index != null) {
+      const wasPlaying = status.playing;
+      const keepAyah = arabicAyah ?? undefined;
+      loadTrack(tracks, index, 0, wasPlaying, rec === URDU ? undefined : keepAyah);
+    }
+  };
+
+  const setPrayer = (patch: Partial<PrayerSettings>) =>
+    setPrayerState((p) => {
+      const next = { ...p, ...patch };
+      AsyncStorage.setItem(PRAYER_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+
   const setSpeed = (speed: number) => {
     speedRef.current = speed;
     updateSettings({ speed });
@@ -704,6 +820,21 @@ function Main() {
     playing: status.playing,
     currentTime: status.currentTime,
     duration: status.duration,
+    arabicPos: arabic ? { i: arabic.i, n: arabic.list.length, ayah: arabic.list[arabic.i] } : null,
+    goAyah: (k) => track && arabic && k >= 0 && k < arabic.list.length && loadTrack(tracks, index!, 0, true, arabic.list[k]),
+    reciter,
+    reciterName: reciterLabel(reciter),
+    setReciter,
+    openReciters: () => setReciterSheet(true),
+    listened,
+    upNext: upNext ? { track: tracks[upNext.i], left: upNextLeft } : null,
+    playUpNext: () => upNext && loadTrack(tracks, upNext.i, 0, true),
+    cancelUpNext: () => {
+      if (!upNext) return;
+      loadTrack(tracks, upNext.i, 0, false);
+    },
+    prayer,
+    setPrayer,
     buffering: status.isBuffering,
     label,
     partLabel: (tr) => `Part ${tr.part}`,
@@ -722,7 +853,7 @@ function Main() {
     trackForAyah,
     resume,
     bookmarks,
-    isBookmarked,
+    isBookmarked: (id) => (arabicAyah != null && track && id === track.id ? reading.marks.includes(ayahKey(track.surah, arabicAyah)) : isBookmarked(id)),
     toggleBookmark,
     removeBookmark,
     notes,
@@ -736,8 +867,15 @@ function Main() {
     readTarget,
     openReader,
     playSurahFromReader: (surah) => {
-      const i = trackForAyah(surah, reading.lastRead?.surah === surah ? reading.lastRead.ayah : 1);
-      if (i >= 0) pick(i);
+      const ayah = reading.lastRead?.surah === surah ? reading.lastRead.ayah : 1;
+      const i = trackForAyah(surah, ayah);
+      if (i < 0) return;
+      if (reciter !== URDU) {
+        // Arabic reciter: start at the ayah on screen and stay in the reader, which follows along
+        if (ayahQueue) stopAyah();
+        ensureNotifPermission();
+        loadTrack(tracks, i, 0, true, ayah);
+      } else pick(i);
     },
     ayahSheet,
     openAyah: (surah, ayah) => setAyahSheet({ surah, ayah }),
@@ -779,7 +917,7 @@ function Main() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <StatusBar style={view === 'list' || view === 'about' || view === 'tasbeeh' || dark ? 'light' : 'dark'} />
+      <StatusBar style={view === 'list' || view === 'about' || view === 'tasbeeh' || view === 'prayer' || dark ? 'light' : 'dark'} />
       <ErrorBoundary
         key={screenKey}
         t={t}
@@ -811,6 +949,8 @@ function Main() {
           <TasbeehScreen app={app} />
         ) : view === 'streak' ? (
           <StreakScreen app={app} />
+        ) : view === 'prayer' ? (
+          <PrayerScreen app={app} />
         ) : (
           <ListScreen app={app} error={error} />
         )}
@@ -819,6 +959,7 @@ function Main() {
         <NoteEditor app={app} draft={noteDraft} onClose={() => setNoteDraft(null)} onSave={saveNote} />
         <IntroScreen visible={intro} onDone={closeIntro} />
         <AyahSheet app={app} />
+        <ReciterSheet app={app} visible={reciterSheet} onClose={() => setReciterSheet(false)} />
       </ErrorBoundary>
     </View>
   );

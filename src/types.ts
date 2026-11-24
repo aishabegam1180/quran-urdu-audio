@@ -1,4 +1,5 @@
 import { Bookmark, DuaLang, Note, Track } from './library';
+import { PrayerSettings } from './prayer';
 import { ReadState } from './reading';
 import { Reminder } from './streak';
 import { SurahInfo } from './surahs';
@@ -12,7 +13,7 @@ export type Sleep =
   | { kind: 'minutes'; minutes: number; endsAt: number }
   | { kind: 'end' };
 
-export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about' | 'tasbeeh' | 'streak' | 'readhome' | 'read';
+export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about' | 'tasbeeh' | 'streak' | 'readhome' | 'read' | 'prayer';
 
 export type StreakInfo = {
   current: number;
@@ -34,6 +35,19 @@ export type AppCtx = {
   currentTime: number;
   duration: number;
   buffering: boolean;
+  /** set while an Arabic-only reciter plays the part ayah by ayah */
+  arabicPos: { i: number; n: number; ayah: number } | null;
+  goAyah: (k: number) => void;
+  reciter: string; // 'urdu' or an Islamic Network reciter id
+  reciterName: string;
+  setReciter: (id: string) => void;
+  openReciters: () => void;
+  listened: Set<string>; // track ids played to the end
+  upNext: { track: Track; left: number } | null; // countdown shown after a part ends
+  playUpNext: () => void;
+  cancelUpNext: () => void;
+  prayer: PrayerSettings;
+  setPrayer: (patch: Partial<PrayerSettings>) => void;
   label: (t: Track) => string;
   partLabel: (t: Track) => string;
   ayahText: (t: Track) => string;

@@ -20,6 +20,7 @@ import {
   ayahIndex,
   loadQuran,
   parseRef,
+  partRange,
   QURAN_FONT,
   quranLoaded,
   QuranText,
@@ -269,6 +270,14 @@ export function ReadSurahScreen({ app }: { app: AppCtx }) {
     if (first && typeof first.item === 'number') saveRef.current(surahRef.current, first.item);
   }).current;
 
+  // follow the recitation: keep the ayah being recited on screen
+  useEffect(() => {
+    if (!q || !playingKey) return;
+    const [s, a] = playingKey.split(':').map(Number);
+    if (s !== target.surah || !a) return;
+    listRef.current?.scrollToIndex({ index: a - 1, animated: true, viewPosition: 0.2 });
+  }, [playingKey, q, target.surah]);
+
   // jump to the requested ayah once the text is ready
   useEffect(() => {
     if (!q || target.ayah <= 1) return;
@@ -292,14 +301,29 @@ export function ReadSurahScreen({ app }: { app: AppCtx }) {
             </Text>
           </View>
           <Pressable
-            onPress={() => app.playSurahFromReader(target.surah)}
-            accessibilityLabel="Listen to this surah with Urdu translation"
+            onPress={() =>
+              app.track?.surah === target.surah && app.arabicPos ? app.playPause() : app.playSurahFromReader(target.surah)
+            }
+            onLongPress={app.openReciters}
+            accessibilityLabel={`Listen to this surah: ${app.reciterName}`}
             style={[styles.round, { borderColor: t.headerLine }]}
           >
-            <Ionicons name="headset-outline" size={20} color={t.gold} />
+            <Ionicons
+              name={app.track?.surah === target.surah && app.arabicPos && app.playing ? 'pause' : 'headset-outline'}
+              size={20}
+              color={t.gold}
+            />
           </Pressable>
         </View>
         <ModeSwitch app={app} dark />
+        <Pressable onPress={app.openReciters} accessibilityLabel={`Reciter: ${app.reciterName}. Change reciter`} style={[styles.reciterChip, { borderColor: t.headerLine }]}>
+          <Ionicons name="headset-outline" size={14} color={t.gold} />
+          <Text style={[styles.tiny, { color: t.headerText, flexShrink: 1 }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+            {app.reciterName}
+            {app.reciter === 'urdu' ? ' · choose an Arabic reciter to follow along' : ''}
+          </Text>
+          <Ionicons name="chevron-down" size={13} color={t.headerMuted} />
+        </Pressable>
       </View>
       {!q ? (
         <Loading t={t} failed={failed} retry={retry} />
@@ -481,18 +505,19 @@ export function VerseOfDayCard({ app }: { app: AppCtx }) {
 
 // ---------- Quran text page inside the player ----------
 
-/** Ayahs covered by a track part: "Ayahs 1-141" → 1..141; empty → the whole surah. */
-function partRange(ayahs: string, total: number) {
-  const m = ayahs.match(/(\d+)\s*[-–]\s*(\d+)/);
-  if (m) return { from: Math.max(1, Number(m[1])), to: Math.min(total, Number(m[2])) };
-  const one = ayahs.match(/(\d+)/);
-  if (one) return { from: Number(one[1]), to: Number(one[1]) };
-  return { from: 1, to: total };
-}
-
 export function PlayerTextPage({ app }: { app: AppCtx }) {
   const { t, track } = app;
   const { q, failed, retry } = useQuran();
+  const listRef = useRef<FlatList<number>>(null);
+  const playingKey = app.ayahPlaying;
+  const partFrom = track ? partRange(track.ayahs, surahInfo(track.surah).ayahs).from : 1;
+  // follow the recitation (Arabic reciters play ayah by ayah)
+  useEffect(() => {
+    if (!q || !playingKey || !track) return;
+    const [s, a] = playingKey.split(':').map(Number);
+    if (s !== track.surah || a < partFrom) return;
+    listRef.current?.scrollToIndex({ index: a - partFrom, animated: true, viewPosition: 0.2 });
+  }, [playingKey, q, track, partFrom]);
   const counts = useMemo(() => notesCount(app), [app.notes]); // eslint-disable-line react-hooks/exhaustive-deps
   const marks = useMemo(() => new Set(app.reading.marks), [app.reading.marks]);
   if (!track) return null;
@@ -503,10 +528,20 @@ export function PlayerTextPage({ app }: { app: AppCtx }) {
   return (
     <View style={{ flex: 1 }}>
       <ModeSwitch app={app} />
+      {!!app.arabicPos && (
+        <Text style={[styles.tiny, { color: t.goldText, textAlign: 'center', marginTop: 8 }]}>
+          The ayah being recited is highlighted and the page follows along
+        </Text>
+      )}
       <FlatList
+        ref={listRef}
         data={list}
         keyExtractor={(a) => String(a)}
         style={{ marginTop: 10 }}
+        onScrollToIndexFailed={(e) => {
+          listRef.current?.scrollToOffset({ offset: e.averageItemLength * e.index, animated: false });
+          setTimeout(() => listRef.current?.scrollToIndex({ index: e.index, animated: true, viewPosition: 0.2 }), 150);
+        }}
         extraData={`${app.reading.mode}|${app.ayahPlaying}|${app.notes.length}|${app.reading.marks.length}`}
         contentContainerStyle={{ gap: 10, paddingBottom: 12 }}
         initialNumToRender={6}
@@ -569,6 +604,7 @@ const styles = StyleSheet.create({
   readHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, gap: 12 },
   readTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   readTitle: { fontFamily: FONTS.display, fontSize: 24 },
+  reciterChip: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', minHeight: 32, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, maxWidth: '100%' },
   round: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   sheetWrap: { flex: 1, justifyContent: 'flex-end' },
   sheet: { paddingHorizontal: 20, paddingTop: 12, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 12 },
