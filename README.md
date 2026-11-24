@@ -16,6 +16,8 @@ No personal data is collected. Read the full [privacy policy](PRIVACY.md).
 ## Credits
 - Duas: Arabic text from the Tanzil Project (https://tanzil.net), used unchanged; Urdu translation by Fateh Muhammad Jalandhari and English translation by Saheeh International (both via Tanzil). The list of dua ayahs follows quranwbw.com/duas.
 - Islamic date: Umm al-Qura calendar data from the hijri-converter project.
+- Read Quran: Indo-Pak (Naskh Nastaleeq, Madinah version) text and the AlQuran-IndoPak font by Ayman Siddiqui and R. Siddiqua for QuranWBW.com and Quran.com (https://github.com/marwan/indopak-quran-text), used unchanged, for Sadaqa-e-Jaria; the text was verified against the King Fahd Complex Nastaleeq Mushaf. Urdu (Fateh Muhammad Jalandhari) and English (Saheeh International) translations from Tanzil.net, unchanged.
+- Single-ayah recitation: Shaykh Mishary Rashid Alafasy, streamed from the Islamic Network (https://alquran.cloud).
 
 ## Install on your phone
 Open this link on your Android phone, download the APK and install it (allow "Install unknown apps" for your browser when asked):

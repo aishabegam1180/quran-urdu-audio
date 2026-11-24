@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatTime, Note } from '../library';
+import { surahInfo } from '../surahs';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
 import { ScreenHeader } from '../ui';
@@ -27,7 +28,11 @@ export function NotesScreen({ app }: { app: AppCtx }) {
       .filter((n) => {
         if (!k) return true;
         const where = n.trackId ? app.trackById(n.trackId) : null;
-        return n.text.toLowerCase().includes(k) || (where && app.label(where.track).toLowerCase().includes(k));
+        return (
+          n.text.toLowerCase().includes(k) ||
+          (where && app.label(where.track).toLowerCase().includes(k)) ||
+          (n.ayah && (n.ayah.includes(k) || surahInfo(Number(n.ayah.split(':')[0])).name.toLowerCase().includes(k)))
+        );
       });
   }, [app.notes, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -39,10 +44,15 @@ export function NotesScreen({ app }: { app: AppCtx }) {
 
   const row = ({ item: n }: { item: Note }) => {
     const where = n.trackId ? app.trackById(n.trackId) : null;
+    const ay = n.ayah ? n.ayah.split(':').map(Number) : null;
     return (
       <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.line }]}>
         <View style={styles.cardTop}>
-          {where ? (
+          {ay ? (
+            <Text style={[styles.tag, { color: t.green, backgroundColor: t.activeBg }]} numberOfLines={1}>
+              {surahInfo(ay[0]).name} · {n.ayah}
+            </Text>
+          ) : where ? (
             <>
               <Text style={[styles.tag, { color: t.green, backgroundColor: t.activeBg }]} numberOfLines={1}>
                 {app.label(where.track)}
@@ -56,6 +66,12 @@ export function NotesScreen({ app }: { app: AppCtx }) {
         </View>
         <Text style={[styles.text, { color: t.text }]}>{n.text}</Text>
         <View style={styles.actions}>
+          {ay && (
+            <Pressable onPress={() => app.openReader(ay[0], ay[1])} style={styles.action} hitSlop={6}>
+              <Ionicons name="book-outline" size={14} color={t.green} />
+              <Text style={[styles.actionText, { color: t.green }]}>Read ayah</Text>
+            </Pressable>
+          )}
           {where && (
             <Pressable onPress={() => app.resume(n.trackId!, n.position)} style={styles.action} hitSlop={6}>
               <Ionicons name="play" size={14} color={t.green} />

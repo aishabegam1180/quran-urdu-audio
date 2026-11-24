@@ -64,6 +64,9 @@ import { AboutScreen } from './src/screens/AboutScreen';
 import { DuasScreen } from './src/screens/DuasScreen';
 import { FeedbackScreen } from './src/screens/FeedbackScreen';
 import { IntroScreen } from './src/screens/IntroScreen';
+import { AyahSheet, ReadHomeScreen, ReadSurahScreen } from './src/screens/ReadScreens';
+import { ayahAudioUrl } from './src/quran';
+import { DEFAULT_READ, ReadState, ayahKey, loadReading, saveReading } from './src/reading';
 import { ListScreen } from './src/screens/ListScreen';
 import { MoreSheet } from './src/screens/MoreSheet';
 import { NoteDraft, NoteEditor } from './src/screens/NoteEditor';
@@ -120,6 +123,9 @@ export default function App() {
 function Main() {
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
+  // a second, small player for single ayahs (Mishary) from the reader and the verse of the day
+  const ayahPlayer = useAudioPlayer(null, { updateInterval: 250 });
+  const ayahStatus = useAudioPlayerStatus(ayahPlayer);
   const scheme = useColorScheme();
 
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -144,6 +150,10 @@ function Main() {
   const [streakData, setStreakData] = useState<StreakData>(() => emptyStreak());
   const [reminderBlocked, setReminderBlocked] = useState(false);
   const [intro, setIntro] = useState(false);
+  const [reading, setReadingState] = useState<ReadState>(DEFAULT_READ);
+  const [readTarget, setReadTarget] = useState<{ surah: number; ayah: number } | null>(null);
+  const [ayahSheet, setAyahSheet] = useState<{ surah: number; ayah: number } | null>(null);
+  const [ayahQueue, setAyahQueue] = useState<{ surah: number; list: number[]; i: number; range: string } | null>(null);
 
   const pendingSeek = useRef<number | null>(null);
   const lastSaved = useRef(0);
@@ -260,6 +270,7 @@ function Main() {
         loadStreak(),
         AsyncStorage.getItem(KEY_INTRO).catch(() => '1'),
       ]);
+      loadReading().then(setReadingState);
       setStreakData(st);
       refreshReminders(st); // keeps the next two weeks of reminders scheduled
       if (!seenIntro) setIntro(true);
@@ -358,6 +369,53 @@ function Main() {
     });
   };
 
+  // ---- reading the Quran ----
+  const setReading = (patch: Partial<ReadState>) =>
+    setReadingState((r) => {
+      const next = { ...r, ...patch };
+      saveReading(next);
+      return next;
+    });
+  const lastReadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveLastRead = (surah: number, ayah: number) => {
+    if (lastReadTimer.current) clearTimeout(lastReadTimer.current);
+    lastReadTimer.current = setTimeout(() => setReading({ lastRead: { surah, ayah, at: Date.now() } }), 800);
+  };
+  const openReader = (surah: number, ayah = 1) => {
+    setAyahSheet(null);
+    setReadTarget({ surah, ayah });
+    setView('read');
+  };
+  const toggleAyahMark = (key: string) =>
+    setReading({ marks: reading.marks.includes(key) ? reading.marks.filter((k) => k !== key) : [...reading.marks, key] });
+  const hideVerseOfDay = () => setReading({ votdHidden: `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}` });
+
+  // single-ayah audio: plays the queued ayahs one after another, then stops
+  const stopAyah = () => {
+    setAyahQueue(null);
+    safe('ayah-stop', () => ayahPlayer.pause());
+  };
+  const playAyahs = (surah: number, from: number, to: number, rangeId?: string) => {
+    if (status.playing) safe('pause-for-ayah', () => player.pause());
+    const list = Array.from({ length: to - from + 1 }, (_, k) => from + k);
+    setAyahQueue({ surah, list, i: 0, range: rangeId ?? `${surah}:${from}` });
+    safe('ayah-play', () => {
+      ayahPlayer.replace({ uri: ayahAudioUrl(surah, from) });
+      ayahPlayer.play();
+    });
+  };
+  useEffect(() => {
+    if (!ayahQueue || !ayahStatus.didJustFinish) return;
+    const n = ayahQueue.i + 1;
+    if (n >= ayahQueue.list.length) return setAyahQueue(null);
+    setAyahQueue({ ...ayahQueue, i: n });
+    safe('ayah-next', () => {
+      ayahPlayer.replace({ uri: ayahAudioUrl(ayahQueue.surah, ayahQueue.list[n]) });
+      ayahPlayer.play();
+    });
+  }, [ayahStatus.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ayahPlaying = ayahQueue ? ayahKey(ayahQueue.surah, ayahQueue.list[ayahQueue.i]) : null;
+
   const closeIntro = () => {
     setIntro(false);
     AsyncStorage.setItem(KEY_INTRO, '1').catch(() => {});
@@ -415,12 +473,14 @@ function Main() {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (menu) return setMenu(false), true;
       if (noteDraft) return setNoteDraft(null), true;
+      if (ayahSheet) return setAyahSheet(null), true;
       if (sheet) return setSheet(false), true;
+      if (view === 'read') return setView('readhome'), true;
       if (view !== 'list') return setView('list'), true;
       return false;
     });
     return () => sub.remove();
-  }, [menu, noteDraft, sheet, view]);
+  }, [menu, noteDraft, ayahSheet, sheet, view]);
 
   // ---- keep the date fresh when the app comes back after midnight ----
   useEffect(() => {
@@ -437,6 +497,7 @@ function Main() {
   };
 
   const playPause = () => {
+    if (ayahQueue) stopAyah();
     if (!track) return void (tracks.length && loadTrack(tracks, 0));
     ensureNotifPermission();
     safe('playpause', () => (status.playing ? player.pause() : player.play()));
@@ -456,6 +517,7 @@ function Main() {
 
   const pick = (i: number) => {
     ensureNotifPermission();
+    if (ayahQueue) stopAyah();
     if (i === index) {
       if (!status.playing) safe('play', () => player.play());
     } else loadTrack(tracks, i, 0, true);
@@ -568,14 +630,14 @@ function Main() {
     setNotes(next);
     saveNotes(next).catch(() => {});
   };
-  const saveNote = (text: string, link: { trackId: string; position: number } | null, existing: Note | null) => {
+  const saveNote = (text: string, link: { trackId: string; position: number } | null, existing: Note | null, ayah?: string) => {
     const now = Date.now();
     if (existing)
-      persistNotes(notes.map((n) => (n.id === existing.id ? { ...n, text, trackId: link?.trackId ?? null, position: link?.position ?? 0, updatedAt: now } : n)));
+      persistNotes(notes.map((n) => (n.id === existing.id ? { ...n, text, trackId: link?.trackId ?? null, position: link?.position ?? 0, ayah: ayah ?? n.ayah, updatedAt: now } : n)));
     else
       persistNotes([
         ...notes,
-        { id: `${now}-${Math.random().toString(36).slice(2, 7)}`, text, trackId: link?.trackId ?? null, position: link?.position ?? 0, createdAt: now, updatedAt: now },
+        { id: `${now}-${Math.random().toString(36).slice(2, 7)}`, text, trackId: link?.trackId ?? null, position: link?.position ?? 0, ...(ayah ? { ayah } : {}), createdAt: now, updatedAt: now },
       ]);
     setNoteDraft(null);
   };
@@ -668,6 +730,26 @@ function Main() {
     deleteNote,
     duaFavs,
     toggleDuaFav,
+    reading,
+    setReading,
+    saveLastRead,
+    readTarget,
+    openReader,
+    playSurahFromReader: (surah) => {
+      const i = trackForAyah(surah, reading.lastRead?.surah === surah ? reading.lastRead.ayah : 1);
+      if (i >= 0) pick(i);
+    },
+    ayahSheet,
+    openAyah: (surah, ayah) => setAyahSheet({ surah, ayah }),
+    closeAyah: () => setAyahSheet(null),
+    playAyahs,
+    stopAyah,
+    ayahPlaying,
+    ayahRange: ayahQueue?.range ?? null,
+    openAyahNote: (key) => setNoteDraft({ note: null, ayah: key }),
+    toggleAyahMark,
+    hideVerseOfDay,
+    today,
     duaLang: settings.duaLang ?? 'both',
     setDuaLang: (duaLang) => updateSettings({ duaLang }),
     gregorianText,
@@ -721,6 +803,10 @@ function Main() {
           <FeedbackScreen app={app} />
         ) : view === 'about' ? (
           <AboutScreen app={app} />
+        ) : view === 'readhome' ? (
+          <ReadHomeScreen app={app} />
+        ) : view === 'read' ? (
+          <ReadSurahScreen app={app} />
         ) : view === 'tasbeeh' ? (
           <TasbeehScreen app={app} />
         ) : view === 'streak' ? (
@@ -732,6 +818,7 @@ function Main() {
         <MoreSheet app={app} visible={menu} onClose={() => setMenu(false)} />
         <NoteEditor app={app} draft={noteDraft} onClose={() => setNoteDraft(null)} onSave={saveNote} />
         <IntroScreen visible={intro} onDone={closeIntro} />
+        <AyahSheet app={app} />
       </ErrorBoundary>
     </View>
   );

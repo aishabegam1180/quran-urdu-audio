@@ -1,7 +1,8 @@
 // Full Now playing screen: medallion, title, seek bar, controls, speed / sleep / repeat, up next.
+// Swipe left (or tap "Quran text") to read along with the surah that is playing.
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RECITERS } from '../config';
 import { formatTime } from '../library';
@@ -9,11 +10,20 @@ import { surahInfo } from '../surahs';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
 import { Medallion } from '../ui';
+import { PlayerTextPage } from './ReadScreens';
 
 export function PlayerScreen({ app }: { app: AppCtx }) {
   const { t, track } = app;
   const insets = useSafeAreaInsets();
   const [barW, setBarW] = useState(1);
+  const [pageW, setPageW] = useState(0);
+  const [pageH, setPageH] = useState(0);
+  const [page, setPage] = useState(0);
+  const pager = useRef<ScrollViewInstance>(null);
+  const goPage = (p: number) => {
+    setPage(p);
+    pager.current?.scrollTo({ x: p * pageW, animated: true });
+  };
   if (!track) return null;
 
   const info = surahInfo(track.surah);
@@ -38,7 +48,19 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         >
           <Ionicons name="chevron-down" size={22} color={t.text} />
         </Pressable>
-        <Text style={[styles.topLabel, { color: t.muted }]}>NOW PLAYING</Text>
+        <View style={[styles.tabs, { backgroundColor: t.segment }]} accessibilityRole="tablist">
+          {['Player', 'Quran text'].map((label, p) => (
+            <Pressable
+              key={label}
+              onPress={() => goPage(p)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: page === p }}
+              style={[styles.tab, page === p && { backgroundColor: t.surface }]}
+            >
+              <Text style={[styles.tabText, { color: page === p ? t.text : t.muted }]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
         <Pressable
           onPress={app.toggleBookmark}
           accessibilityLabel={saved ? 'Remove bookmark' : 'Bookmark this moment'}
@@ -48,6 +70,16 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
         </Pressable>
       </View>
 
+      <ScrollView
+        ref={pager}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        style={styles.pager}
+        onLayout={(e) => (setPageW(e.nativeEvent.layout.width), setPageH(e.nativeEvent.layout.height))}
+        onMomentumScrollEnd={(e) => pageW && setPage(Math.round(e.nativeEvent.contentOffset.x / pageW))}
+      >
+      <View style={[styles.page, { width: pageW || undefined, height: pageH || undefined }]}>
       <View style={{ marginTop: 26 }}>
         <Medallion t={t} ar={info.ar} surah={info.n} />
       </View>
@@ -150,6 +182,29 @@ export function PlayerScreen({ app }: { app: AppCtx }) {
           <Ionicons name="play-skip-forward-outline" size={18} color={t.muted} />
         </Pressable>
       ) : null}
+      </View>
+
+      <View style={[styles.page, { width: pageW || undefined, height: pageH || undefined, paddingTop: 14 }]}>
+        <PlayerTextPage app={app} />
+        <View style={[styles.mini, { backgroundColor: t.header }]}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[styles.miniTitle, { color: t.headerText }]} numberOfLines={1}>
+              {app.label(track)}
+            </Text>
+            <Text style={[styles.miniSub, { color: t.headerMuted }]} numberOfLines={1}>
+              {formatTime(app.currentTime)}
+              {app.duration ? ` / ${formatTime(app.duration)}` : ''} · {RECITERS}
+            </Text>
+          </View>
+          <Pressable onPress={() => app.skip(-10)} accessibilityLabel="Back 10 seconds" hitSlop={6} style={styles.miniBtn}>
+            <Ionicons name="play-back" size={22} color={t.headerText} />
+          </Pressable>
+          <Pressable onPress={app.playPause} accessibilityLabel={app.playing ? 'Pause' : 'Play'} style={[styles.miniPlay, { backgroundColor: t.gold }]}>
+            <Ionicons name={app.playing ? 'pause' : 'play'} size={22} color={t.onGold} style={app.playing ? null : { marginLeft: 3 }} />
+          </Pressable>
+        </View>
+      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -182,6 +237,16 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   roundBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   topLabel: { fontFamily: FONTS.semibold, fontSize: 12, letterSpacing: 1.2 },
+  tabs: { flexDirection: 'row', padding: 4, borderRadius: 14, gap: 4, flex: 1, marginHorizontal: 10 },
+  tab: { flex: 1, minHeight: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  tabText: { fontFamily: FONTS.semibold, fontSize: 13 },
+  pager: { flex: 1, marginHorizontal: -24 },
+  page: { flex: 1, paddingHorizontal: 24 },
+  mini: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, padding: 12, borderRadius: 20 },
+  miniTitle: { fontFamily: FONTS.semibold, fontSize: 14 },
+  miniSub: { fontFamily: FONTS.body, fontSize: 12 },
+  miniBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  miniPlay: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   titleBox: { marginTop: 24, alignItems: 'center', gap: 6 },
   title: { fontFamily: FONTS.display, fontSize: 28, textAlign: 'center' },
   sub: { fontFamily: FONTS.body, fontSize: 14 },

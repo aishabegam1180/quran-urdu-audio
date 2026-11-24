@@ -40,8 +40,10 @@ export function AboutScreen({ app }: { app: AppCtx }) {
           {[
             'Complete Quran recitation by Shaykh Abdur Rahman Al-Sudais and Shaykh Saud Al-Shuraim',
             'Urdu translation by Fateh Muhammad Jalandhari after every ayah',
-            '55 duas from the Quran, with Arabic text from Tanzil.net and Urdu translation by Fateh Muhammad Jalandhari',
-            'Offline listening, bookmarks, notes, Qibla direction and the Islamic date',
+            '55 duas from the Quran, with Arabic text from Tanzil.net, Urdu translation by Fateh Muhammad Jalandhari and English translation by Saheeh International',
+            'Read the Quran in Indo-Pak script, with the Indo-Pak text and font by Ayman Siddiqui and R. Siddiqua (QuranWBW.com and Quran.com), Urdu by Fateh Muhammad Jalandhari and English by Saheeh International (via Tanzil.net)',
+            'Verse of the day and single-ayah recitation by Shaykh Mishary Rashid Alafasy (audio from the Islamic Network, alquran.cloud)',
+            'Offline listening, bookmarks, notes, Qibla direction, Tasbeeh, a daily streak and the Islamic date',
           ].map((line) => (
             <View key={line} style={styles.bullet}>
               <Text style={[styles.p, { color: t.goldText }]}>•</Text>

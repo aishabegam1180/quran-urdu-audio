@@ -8,6 +8,7 @@ import { RECITERS } from '../config';
 import { Track, formatTime } from '../library';
 import { SavedList } from './SavedScreen';
 import { JUZ, searchKey } from '../surahs';
+import { VerseOfDayCard } from './ReadScreens';
 import { FONTS } from '../theme';
 import { AppCtx, Part, SurahGroup } from '../types';
 import { HeaderPattern, StarBadge } from '../ui';
@@ -171,8 +172,12 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
     </View>
   );
 
+  const todayKey = `${app.today.getFullYear()}-${app.today.getMonth() + 1}-${app.today.getDate()}`;
+  const showVerse = !query && app.reading.votdHidden !== todayKey;
+
   const tabs = (
-    <View style={{ paddingHorizontal: 20, paddingTop: 16, gap: 14 }}>
+    <View style={{ paddingHorizontal: 20, paddingTop: showVerse ? 0 : 16, gap: 14 }}>
+      {showVerse && <VerseOfDayCard app={app} />}
       <View style={[styles.search, { backgroundColor: t.surface, borderColor: t.line }]}>
         <Ionicons name="search" size={18} color={t.muted} />
         <TextInput

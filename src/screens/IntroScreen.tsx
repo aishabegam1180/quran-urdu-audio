@@ -25,7 +25,7 @@ const STEPS: { title: string; text: string; icon: keyof typeof Ionicons.glyphMap
   },
   {
     title: 'More in the menu',
-    text: 'Tap the menu at the top for Duas from the Quran, Qibla, Tasbeeh and your daily streak.',
+    text: 'Tap the menu at the top to read the Quran in Indo-Pak script, and for Duas, Qibla, Tasbeeh and your daily streak.',
     icon: 'menu',
   },
 ];

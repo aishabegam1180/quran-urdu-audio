@@ -77,6 +77,7 @@ export type Note = {
   text: string;
   trackId: string | null; // the part it is linked to, if any
   position: number; // seconds into that part
+  ayah?: string; // or the ayah it is about, "2:255" (from the reader)
   createdAt: number;
   updatedAt: number;
 };

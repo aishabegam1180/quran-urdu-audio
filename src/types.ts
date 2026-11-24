@@ -1,4 +1,5 @@
 import { Bookmark, DuaLang, Note, Track } from './library';
+import { ReadState } from './reading';
 import { Reminder } from './streak';
 import { SurahInfo } from './surahs';
 import { Theme } from './theme';
@@ -11,7 +12,7 @@ export type Sleep =
   | { kind: 'minutes'; minutes: number; endsAt: number }
   | { kind: 'end' };
 
-export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about' | 'tasbeeh' | 'streak';
+export type View = 'list' | 'player' | 'qibla' | 'notes' | 'saved' | 'duas' | 'feedback' | 'about' | 'tasbeeh' | 'streak' | 'readhome' | 'read';
 
 export type StreakInfo = {
   current: number;
@@ -62,6 +63,7 @@ export type AppCtx = {
   duaFavs: string[];
   toggleDuaFav: (id: string) => void;
   duaLang: DuaLang;
+  today: Date;
   setDuaLang: (l: DuaLang) => void;
   // dates
   gregorianText: string;
@@ -77,6 +79,23 @@ export type AppCtx = {
   setSleep: (choice: 'off' | 'end' | number) => void;
   repeat: boolean;
   toggleRepeat: () => void;
+  // reading the Quran
+  reading: ReadState;
+  setReading: (patch: Partial<ReadState>) => void;
+  saveLastRead: (surah: number, ayah: number) => void;
+  readTarget: { surah: number; ayah: number } | null;
+  openReader: (surah: number, ayah?: number) => void;
+  playSurahFromReader: (surah: number) => void;
+  ayahSheet: { surah: number; ayah: number } | null;
+  openAyah: (surah: number, ayah: number) => void;
+  closeAyah: () => void;
+  playAyahs: (surah: number, from: number, to: number, rangeId?: string) => void;
+  stopAyah: () => void;
+  ayahPlaying: string | null; // "2:255" while that ayah plays
+  ayahRange: string | null; // the range being played, e.g. "94:5-6"
+  openAyahNote: (ayahKey: string) => void;
+  toggleAyahMark: (ayahKey: string) => void;
+  hideVerseOfDay: () => void;
   // daily streak
   streak: StreakInfo;
   setReminder: (patch: Partial<Reminder>) => void;

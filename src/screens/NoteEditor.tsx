@@ -1,13 +1,14 @@
-// Bottom sheet to write or edit a note, optionally linked to the part and time playing now.
+// Bottom sheet to write or edit a note, linked to the part and time playing now, or to an ayah from the reader.
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { formatTime, Note } from '../library';
+import { surahInfo } from '../surahs';
 import { FONTS } from '../theme';
 import { AppCtx } from '../types';
 
-export type NoteDraft = { note: Note | null } | null;
+export type NoteDraft = { note: Note | null; ayah?: string } | null;
 
 export function NoteEditor({
   app,
@@ -18,11 +19,12 @@ export function NoteEditor({
   app: AppCtx;
   draft: NoteDraft;
   onClose: () => void;
-  onSave: (text: string, link: { trackId: string; position: number } | null, existing: Note | null) => void;
+  onSave: (text: string, link: { trackId: string; position: number } | null, existing: Note | null, ayah?: string) => void;
 }) {
   const { t } = app;
   const insets = useSafeAreaInsets();
   const existing = draft?.note ?? null;
+  const ayah = existing?.ayah ?? draft?.ayah; // a note about one ayah (from the reader)
   const [text, setText] = useState('');
   const [linkOn, setLinkOn] = useState(true);
   const [link, setLink] = useState<{ trackId: string; position: number } | null>(null);
@@ -36,8 +38,8 @@ export function NoteEditor({
       setLinkOn(!!existing.trackId);
     } else {
       setText('');
-      setLink(app.track ? { trackId: app.track.id, position: Math.floor(app.currentTime) } : null);
-      setLinkOn(!!app.track);
+      setLink(!draft.ayah && app.track ? { trackId: app.track.id, position: Math.floor(app.currentTime) } : null);
+      setLinkOn(!draft.ayah && !!app.track);
     }
   }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -51,7 +53,19 @@ export function NoteEditor({
           <View style={[styles.handle, { backgroundColor: t.line }]} />
           <Text style={[styles.h, { color: t.text }]}>{existing ? 'Edit note' : 'Add a note'}</Text>
 
-          {where && link && (
+          {ayah && (
+            <View style={[styles.link, { borderColor: t.green, backgroundColor: t.activeBg }]}>
+              <Ionicons name="book-outline" size={20} color={t.green} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.linkTitle, { color: t.text }]}>Note on this ayah</Text>
+                <Text style={[styles.linkSub, { color: t.muted }]} numberOfLines={1}>
+                  {surahInfo(Number(ayah.split(':')[0])).name} · {ayah}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {!ayah && where && link && (
             <Pressable
               onPress={() => setLinkOn((v) => !v)}
               style={[styles.link, { borderColor: linkOn ? t.green : t.line, backgroundColor: linkOn ? t.activeBg : t.surface }]}
@@ -86,7 +100,7 @@ export function NoteEditor({
             </Pressable>
             <Pressable
               disabled={!text.trim()}
-              onPress={() => onSave(text.trim(), linkOn ? link : null, existing)}
+              onPress={() => onSave(text.trim(), !ayah && linkOn ? link : null, existing, ayah)}
               style={[styles.btn, { flex: 2, backgroundColor: t.playBg, opacity: text.trim() ? 1 : 0.5 }]}
             >
               <Text style={[styles.btnText, { color: t.playIcon }]}>Save note</Text>
