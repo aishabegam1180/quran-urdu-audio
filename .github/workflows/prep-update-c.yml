@@ -1,0 +1,83 @@
+# Preparation for Update C (data checks only, the app is not built or changed).
+# 1. Finds and downloads the Adhan recordings from Islamic Network / AlAdhan and makes short notification clips.
+# 2. Checks that each verse-by-verse reciter has all 6,236 ayahs on the Islamic Network CDN.
+# 3. Compares prayer times from the adhan JS library with the AlAdhan API (Karachi method, Hanafi Asr).
+# Results go to the "data" release.
+name: prep-update-c
+on:
+  workflow_dispatch:
+  push:
+    branches: [update-c]
+    paths: ['.github/workflows/prep-update-c.yml']
+permissions:
+  contents: write
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: Find Adhan files
+        run: |
+          mkdir -p adhan && cd adhan
+          for u in https://aladhan.com/download-adhans https://aladhan.com/download https://aladhan.com/adhans https://aladhan.com/play https://aladhan.com/; do
+            echo "== $u" >> pages.txt
+            curl -sL -A "Mozilla/5.0" "$u" -o page.html -w "%{http_code}\n" >> pages.txt || true
+            grep -oiE '(https?:)?//[^"'"'"' )]+\.mp3|"[^"]+\.mp3"' page.html | tr -d '"' >> links.txt || true
+          done
+          sort -u links.txt | sed 's#^//#https://#' > mp3s.txt
+          cat pages.txt; echo "--- mp3 links"; cat mp3s.txt
+      - name: Download Adhans and make clips
+        run: |
+          cd adhan; mkdir -p full clips
+          i=0
+          while read -r u; do
+            case "$u" in http*) ;; /*) u="https://aladhan.com$u";; *) continue;; esac
+            i=$((i+1)); f="full/$(printf %02d $i)-$(basename "${u%%\?*}")"
+            curl -sL -A "Mozilla/5.0" "$u" -o "$f" || continue
+            d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" || echo "?")
+            echo "$(basename "$f") | $d s | $u" >> index.txt
+            ffmpeg -v error -y -i "$f" -t 30 -af "afade=t=out:st=27:d=3" -ac 1 -b:a 96k "clips/$(basename "${f%.*}")-30s.mp3" || true
+          done < mp3s.txt
+          cat index.txt || echo "no files"
+          zip -qr ../adhan.zip .
+      - name: Check reciters have all ayahs
+        run: |
+          for r in ar.alafasy ar.abdulbasitmurattal ar.husary ar.minshawi ar.mahermuaiqly ar.abdurrahmaansudais ar.saoodshuraym ar.shaatree ar.ahmedajamy ar.hanirifai; do
+            seq 1 6236 | xargs -P 64 -I{} sh -c 'c=$(curl -s -o /dev/null -I -w "%{http_code}" https://cdn.islamic.network/quran/audio/128/'"$r"'/{}.mp3); [ "$c" = 200 ] || echo {}' > missing.txt
+            echo "$r missing: $(wc -l < missing.txt) $(head -c 200 missing.txt | tr '\n' ' ')" | tee -a reciters.txt
+          done
+      - name: Compare prayer times
+        run: |
+          npm init -y >/dev/null && npm i -s adhan@4
+          cat > cmp.js <<'JS'
+          const adhan = require('adhan');
+          const cities = [['Bengaluru',12.9716,77.5946],['Hyderabad',17.385,78.4867],['Mumbai',19.076,72.8777],['Delhi',28.6139,77.209],['Chennai',13.0827,80.2707],['Karachi',24.8607,67.0011],['Dubai',25.2048,55.2708],['London',51.5074,-0.1278]];
+          const dates = ['2026-12-01','2027-03-21','2027-06-21','2027-09-23'];
+          const fmt = (d, tz) => d.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+          (async () => {
+            let worst = 0, out = [];
+            for (const [name, lat, lng] of cities) for (const ds of dates) {
+              const [y, m, d] = ds.split('-').map(Number);
+              const p = new adhan.PrayerTimes(new adhan.Coordinates(lat, lng), new Date(y, m - 1, d), Object.assign(adhan.CalculationMethod.Karachi(), { madhab: adhan.Madhab.Hanafi }));
+              const r = await (await fetch(`https://api.aladhan.com/v1/timings/${d}-${m}-${y}?latitude=${lat}&longitude=${lng}&method=1&school=1`)).json();
+              const tz = r.data.meta.timezone, t = r.data.timings;
+              for (const [k, a] of [['Fajr','fajr'],['Sunrise','sunrise'],['Dhuhr','dhuhr'],['Asr','asr'],['Maghrib','maghrib'],['Isha','isha']]) {
+                const mine = fmt(p[a], tz), ref = t[k].slice(0, 5);
+                const diff = Math.abs((+mine.slice(0,2)*60 + +mine.slice(3)) - (+ref.slice(0,2)*60 + +ref.slice(3)));
+                worst = Math.max(worst, diff);
+                out.push(`${name} ${ds} ${k}: app ${mine} | AlAdhan ${ref} | diff ${diff} min`);
+              }
+            }
+            out.push(`WORST DIFFERENCE: ${worst} min`);
+            require('fs').writeFileSync('prayer-compare.txt', out.join('\n'));
+            console.log(out.slice(-1)[0]);
+          })();
+          JS
+          node cmp.js
+      - name: Attach results to the "data" release
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          gh release view data -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create data -R "$GITHUB_REPOSITORY" -t "Data (not the app)" -n "Open data used to prepare app content."
+          cp adhan/index.txt adhan-index.txt 2>/dev/null || echo none > adhan-index.txt
+          gh release upload data -R "$GITHUB_REPOSITORY" --clobber adhan.zip adhan-index.txt reciters.txt prayer-compare.txt
