@@ -1,0 +1,52 @@
+# Update C check (data only): finds the working audio address (bitrate) for each Arabic reciter on the
+# Islamic Network CDN, checks a spread of ayahs, and saves reciter-audio.txt to the "data" release.
+name: check-reciters
+on:
+  workflow_dispatch:
+  push:
+    branches: [update-c]
+    paths: ['.github/workflows/check-reciters.yml']
+permissions:
+  contents: write
+jobs:
+  reciters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check reciter audio
+        run: |
+          R="ar.alafasy ar.abdurrahmaansudais ar.saoodshuraym ar.mahermuaiqly ar.husary ar.minshawi ar.abdulbasitmurattal ar.shaatree ar.ahmedajamy ar.hanirifai"
+          echo "== API audio links for ayah 1" > reciter-audio.txt
+          for r in $R; do
+            curl -s "https://api.alquran.cloud/v1/ayah/1/$r" | python3 -c "import json,sys;d=json.load(sys.stdin)['data'];print('$r', d.get('audio'), d.get('audioSecondary'))" >> reciter-audio.txt || echo "$r api-failed" >> reciter-audio.txt
+          done
+          echo "== HTTP status of ayah 1 by bitrate" >> reciter-audio.txt
+          for r in $R; do
+            line="$r:"
+            for b in 32 40 48 64 128 192; do
+              c=$(curl -s -o /dev/null -I -w "%{http_code}" "https://cdn.islamic.network/quran/audio/$b/$r/1.mp3")
+              line="$line $b=$c"
+            done
+            echo "$line" >> reciter-audio.txt
+          done
+          echo "== Spread check (every 25th ayah + last) at the best bitrate" >> reciter-audio.txt
+          for r in $R; do
+            best=""
+            for b in 128 192 64 48 40 32; do
+              c=$(curl -s -o /dev/null -I -w "%{http_code}" "https://cdn.islamic.network/quran/audio/$b/$r/1.mp3")
+              [ "$c" = 200 ] && best=$b && break
+            done
+            [ -z "$best" ] && { echo "$r: NO WORKING BITRATE" >> reciter-audio.txt; continue; }
+            bad=0; n=0
+            for a in $(seq 1 25 6236) 6236; do
+              n=$((n+1))
+              c=$(curl -s -o /dev/null -I -w "%{http_code}" "https://cdn.islamic.network/quran/audio/$best/$r/$a.mp3")
+              [ "$c" = 200 ] || { bad=$((bad+1)); echo "  $r ayah $a -> $c" >> reciter-audio.txt; }
+            done
+            echo "$r: bitrate $best, checked $n ayahs, missing $bad" >> reciter-audio.txt
+          done
+          cat reciter-audio.txt
+      - name: Save result
+        if: always()
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release upload data -R "$GITHUB_REPOSITORY" --clobber reciter-audio.txt

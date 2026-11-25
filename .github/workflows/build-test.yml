@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   push:
     branches: [update-c]
-    paths-ignore: [scripts/**, "**.md", .github/workflows/prep-update-c.yml]
+    paths-ignore: [scripts/**, "**.md", .github/workflows/prep-update-c.yml, .github/workflows/check-reciters.yml]
 
 permissions:
   contents: write
