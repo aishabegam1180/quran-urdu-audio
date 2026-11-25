@@ -1,13 +1,10 @@
 // Home screen: header (shrinks to one line when the list is scrolled), search, Surahs / Juz / Saved tabs,
 // the surah list (multi-part surahs open into their parts; the one playing glows) and one player bar.
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  LayoutAnimation,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Pressable,
   StyleSheet,
   Text as RNText,
@@ -41,24 +38,6 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
   const [headerW, setHeaderW] = useState(400);
   const [headerH, setHeaderH] = useState(260);
   const [miniH, setMiniH] = useState(76);
-  // the big header folds into one line once the list is scrolled, and comes back at the top
-  const [compact, setCompact] = useState(false);
-  const compactRef = useRef(false);
-  const dragged = useRef(false); // only fold after the person scrolls, not when the list jumps to the playing surah
-  const onScroll = useRef((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = e.nativeEvent.contentOffset.y;
-    if (!dragged.current && !compactRef.current) return;
-    const want = compactRef.current ? y > 8 : y > 80;
-    if (want !== compactRef.current) {
-      compactRef.current = want;
-      LayoutAnimation.configureNext(LayoutAnimation.create(200, 'easeInEaseOut', 'opacity'));
-      setCompact(want);
-    }
-  }).current;
-  const onDrag = useRef(() => {
-    dragged.current = true;
-  }).current;
-
   // open the surah that is playing when the app starts
   const startSurah = app.track?.surah;
   const scrolled = useRef(false);
@@ -66,8 +45,6 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
     if (startSurah == null || scrolled.current || !app.groups.length) return;
     scrolled.current = true;
     setOpen(startSurah);
-    const i = app.groups.findIndex((g) => g.info.n === startSurah);
-    if (i > 0) setTimeout(() => listRef.current?.scrollToIndex({ index: i, viewPosition: 0.1, animated: false }), 400);
   }, [startSurah, app.groups]);
 
   const filtered = useMemo(() => {
@@ -138,16 +115,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         </View>
   );
 
-  const header = compact ? (
-    <View style={[styles.header, styles.headerCompact, { backgroundColor: t.header, paddingTop: insets.top + 8 }]}>
-      <View style={[styles.headerRow, styles.inner, { alignItems: 'center' }]}>
-        <Text style={[styles.h1Small, { color: t.headerText, flex: 1 }]} numberOfLines={1}>
-          Quran Safar
-        </Text>
-        {buttons}
-      </View>
-    </View>
-  ) : (
+  const header = (
     <View
       style={[styles.header, { backgroundColor: t.header, paddingTop: insets.top + 16 }]}
       onLayout={(e) => (setHeaderW(e.nativeEvent.layout.width), setHeaderH(e.nativeEvent.layout.height))}
@@ -201,17 +169,17 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
   );
 
   const todayKey = `${app.today.getFullYear()}-${app.today.getMonth() + 1}-${app.today.getDate()}`;
-  const showVerse = !query && !compact && tab !== 'Saved' && app.reading.votdHidden !== todayKey;
+  const showVerse = !query && tab !== 'Saved' && app.reading.votdHidden !== todayKey;
 
   const tabs = (
-    <View style={[styles.inner, { paddingHorizontal: 20, paddingTop: showVerse ? 0 : compact ? 10 : 16, gap: compact ? 10 : 14 }]}>
+    <View style={[styles.inner, { paddingHorizontal: 20, paddingTop: showVerse ? 0 : 16, gap: 14 }]}>
       {showVerse && <VerseOfDayCard app={app} />}
-      {tab !== 'Saved' && (
+      {tab === 'Surahs' && (
       <View style={[styles.search, { backgroundColor: t.surface, borderColor: t.line }]}>
         <Ionicons name="search" size={18} color={t.muted} />
         <TextInput
           value={query}
-          onChangeText={(q) => (setQuery(q), q && setTab('Surahs'))}
+          onChangeText={setQuery}
           placeholder="Search by name or number…"
           placeholderTextColor={t.muted}
           accessibilityLabel="Search surahs"
@@ -351,29 +319,33 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
   const padBottom = (app.track ? miniH + 30 : 24) + insets.bottom;
   const bottomPad = { paddingBottom: padBottom };
 
-  // The surah list is rebuilt only when what it shows changes, not on every
-  // half-second progress update while audio plays.
-  const surahList = useMemo(
-    () => (
-      <FlatList
-        ref={listRef}
-        data={filtered}
-        keyExtractor={(g) => String(g.info.n)}
-        renderItem={surahRow}
-        extraData={listExtra}
-        contentContainerStyle={[styles.listPad, styles.inner, { paddingBottom: padBottom }]}
-        keyboardShouldPersistTaps="handled"
-        onScroll={onScroll}
-        onScrollBeginDrag={onDrag}
-        scrollEventThrottle={32}
-        onScrollToIndexFailed={() => {}}
-        ListEmptyComponent={empty('No surah matches your search.')}
-        initialNumToRender={14}
-        windowSize={7}
-      />
-    ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filtered, listExtra, padBottom, app.groups],
+  // The whole page scrolls: header, verse of the day, search and tabs scroll away with the list,
+  // so nothing is stuck on screen with large text. Rows re-render only when what they show changes.
+  const top = (
+    <View style={{ marginHorizontal: -12, marginBottom: 6 }}>
+      {header}
+      {tabs}
+    </View>
+  );
+  const renderSurah = useCallback(
+    (p: { item: SurahGroup }) => <View style={styles.inner}>{surahRow(p)}</View>,
+    [filtered, listExtra, app.groups], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const surahList = (
+    <FlatList
+      ref={listRef}
+      data={filtered}
+      keyExtractor={(g) => String(g.info.n)}
+      renderItem={renderSurah}
+      extraData={listExtra}
+      ListHeaderComponent={top}
+      contentContainerStyle={[styles.listPad, { paddingTop: 0, paddingBottom: padBottom }]}
+      keyboardShouldPersistTaps="handled"
+      onScrollToIndexFailed={() => {}}
+      ListEmptyComponent={empty('No surah matches your search.')}
+      initialNumToRender={14}
+      windowSize={7}
+    />
   );
 
   let body;
@@ -385,12 +357,10 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
       <FlatList
         data={juzRows}
         keyExtractor={(j) => String(j.n)}
-        contentContainerStyle={[styles.listPad, styles.inner, bottomPad]}
-        onScroll={onScroll}
-        onScrollBeginDrag={onDrag}
-        scrollEventThrottle={32}
+        ListHeaderComponent={top}
+        contentContainerStyle={[styles.listPad, { paddingTop: 0 }, bottomPad]}
         renderItem={({ item: j }) => (
-          <HoverPressable onPress={() => j.i >= 0 && app.pick(j.i)} style={[styles.surahRow, { borderRadius: 15 }]} hoverStyle={{ backgroundColor: t.segment }}>
+          <HoverPressable onPress={() => j.i >= 0 && app.pick(j.i)} style={[styles.surahRow, styles.inner, { borderRadius: 15 }]} hoverStyle={{ backgroundColor: t.segment }}>
             <StarBadge n={j.n} t={t} />
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={[styles.surahName, { color: t.text }]}>Para {j.n} · {j.name}</Text>
@@ -403,13 +373,14 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
         )}
       />
     );
-  else body = <SavedList app={app} bottomPad={padBottom} onScroll={onScroll} onScrollBeginDrag={onDrag} />;
+  else body = <SavedList app={app} bottomPad={padBottom} header={top} />;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
-      {header}
-      {tabs}
+      {error || !app.tracks.length ? top : null}
       <View style={{ flex: 1 }}>{body}</View>
+      {/* keeps the status bar readable once the header has scrolled away */}
+      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: t.header }} />
 
       {app.track && (
         <Pressable
@@ -459,9 +430,7 @@ export function ListScreen({ app, error }: { app: AppCtx; error: string | null }
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: { paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
-  headerCompact: { paddingBottom: 10, borderBottomLeftRadius: 22, borderBottomRightRadius: 22 },
   inner: { width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
-  h1Small: { fontFamily: FONTS.display, fontSize: 22 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   headerAr: { fontFamily: FONTS.arabic, fontSize: 22, lineHeight: 32 },
   h1: { fontFamily: FONTS.display, fontSize: 30, lineHeight: 34 },

@@ -452,11 +452,20 @@ function Main() {
     });
   }, [ayahStatus.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
   const arabicAyah = arabic && track ? arabic.list[arabic.i] : null;
-  const ayahPlaying = ayahQueue
-    ? ayahKey(ayahQueue.surah, ayahQueue.list[ayahQueue.i])
-    : track && arabicAyah != null && (status.playing || status.isBuffering)
+  // the main player wins: if it is playing, a single-ayah queue left over (e.g. one that failed to load) is dropped
+  const mainBusy = status.playing || status.isBuffering;
+  useEffect(() => {
+    if (status.playing && ayahQueue) {
+      setAyahQueue(null);
+      safe('ayah-stop', () => ayahPlayer.pause());
+    }
+  }, [status.playing]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ayahPlaying =
+    track && arabicAyah != null && mainBusy
       ? ayahKey(track.surah, arabicAyah)
-      : null;
+      : ayahQueue
+        ? ayahKey(ayahQueue.surah, ayahQueue.list[ayahQueue.i])
+        : null;
 
   const closeIntro = () => {
     setIntro(false);

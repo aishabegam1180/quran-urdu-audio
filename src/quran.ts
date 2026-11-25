@@ -7,6 +7,7 @@
 //   Quran.com, verified against the King Fahd Complex Nastaleeq Mushaf. Free, with credit.
 // - Urdu translation: Fateh Muhammad Jalandhari, via Tanzil.net.
 // - English translation: Saheeh International, via Tanzil.net.
+import { reciterKbps } from './reciters';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import * as Font from 'expo-font';
@@ -49,7 +50,7 @@ export function partRange(ayahs: string, total: number) {
 
 /** One ayah, from the Islamic Network (alquran.cloud) audio service. Mishary Rashid Alafasy unless another reciter is given. */
 export function ayahAudioUrl(surah: number, ayah: number, reciter = 'ar.alafasy') {
-  return `https://cdn.islamic.network/quran/audio/128/${reciter}/${globalAyah(surah, ayah)}.mp3`;
+  return `https://cdn.islamic.network/quran/audio/${reciterKbps(reciter)}/${reciter}/${globalAyah(surah, ayah)}.mp3`;
 }
 
 let loading: Promise<QuranText> | null = null;
