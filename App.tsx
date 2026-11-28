@@ -92,7 +92,6 @@ const KEY_INTRO = 'intro.seen.v1';
 const STREAK_TICK = 5; // seconds of listening counted per tick
 const FADE_SECONDS = 10;
 const KEY_LISTENED = 'listened.v1';
-const UP_NEXT_SECONDS = 5;
 
 installCrashHandler();
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -507,10 +506,8 @@ function Main() {
       if (index + 1 < tracks.length) loadTrack(tracks, index + 1, 0, false);
       else saveProgress(tr.id, 0);
     } else if (index + 1 < tracks.length) {
-      // on the player screen, show "Up next in 5 s" with Play now / Cancel; otherwise carry straight on
-      if (AppState.currentState === 'active' && viewRef.current === 'player')
-        setUpNext({ i: index + 1, at: Date.now() + UP_NEXT_SECONDS * 1000 });
-      else loadTrack(tracks, index + 1, 0, true);
+      // carry straight on to the next part, with no pause or question (testers asked for this)
+      loadTrack(tracks, index + 1, 0, true);
     } else saveProgress(tr.id, 0);
   }, [status.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
 
