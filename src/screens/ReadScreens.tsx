@@ -146,8 +146,17 @@ export const AyahRow = memo(function AyahRow({
         <Ionicons name="ellipsis-horizontal" size={18} color={t.muted} />
       </View>
       <Text style={[styles.arabic, { color: t.text }]}>{q.ar[i]}</Text>
-      {showUr && <Text style={[styles.urdu, { color: t.text }]}>{q.ur[i]}</Text>}
-      {showEn && <Text style={[styles.english, { color: t.text }]}>{q.en[i]}</Text>}
+      {/* a clear gap and a thin line between the Arabic, the Urdu and the English */}
+      {showUr && (
+        <View style={[styles.trBlock, { borderTopColor: t.line }]}>
+          <Text style={[styles.urdu, { color: t.text }]}>{q.ur[i]}</Text>
+        </View>
+      )}
+      {showEn && (
+        <View style={[styles.trBlock, { borderTopColor: t.line }]}>
+          <Text style={[styles.english, { color: t.text }]}>{q.en[i]}</Text>
+        </View>
+      )}
     </Pressable>
   );
 });
@@ -333,7 +342,7 @@ export function ReadSurahScreen({ app }: { app: AppCtx }) {
           data={ayahs}
           keyExtractor={(a) => String(a)}
           extraData={`${mode}|${playingKey}|${app.notes.length}|${app.reading.marks.length}`}
-          contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 30, gap: 10 }}
+          contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 30, gap: 16 }}
           ListHeaderComponent={showsBismillah(target.surah) ? <Bismillah t={t} q={q} /> : undefined}
           initialNumToRender={8}
           windowSize={9}
@@ -543,7 +552,7 @@ export function PlayerTextPage({ app }: { app: AppCtx }) {
           setTimeout(() => listRef.current?.scrollToIndex({ index: e.index, animated: true, viewPosition: 0.2 }), 150);
         }}
         extraData={`${app.reading.mode}|${app.ayahPlaying}|${app.notes.length}|${app.reading.marks.length}`}
-        contentContainerStyle={{ gap: 10, paddingBottom: 12 }}
+        contentContainerStyle={{ gap: 16, paddingBottom: 12 }}
         initialNumToRender={6}
         windowSize={7}
         ListHeaderComponent={
@@ -580,7 +589,8 @@ const styles = StyleSheet.create({
   modes: { flexDirection: 'row', padding: 4, borderRadius: 14, gap: 4 },
   mode: { flex: 1, minHeight: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   modeText: { fontFamily: FONTS.semibold, fontSize: 12 },
-  ayah: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  ayah: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
+  trBlock: { borderTopWidth: StyleSheet.hairlineWidth * 2, paddingTop: 12 },
   ayahTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   num: { minWidth: 32, height: 32, borderRadius: 16, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   numText: { fontFamily: FONTS.bold, fontSize: 12 },

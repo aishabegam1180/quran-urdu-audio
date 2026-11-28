@@ -1,0 +1,43 @@
+# Data only (the app is not changed): downloads the Urdu Tafsir as-Sa'di from QuranEnc.com,
+# exactly as published, with its version, and attaches it to the "data" release.
+# QuranEnc terms: no changes to the content; credit QuranEnc.com; mention the version.
+name: fetch-saadi
+on:
+  workflow_dispatch:
+  push:
+    branches: [update-c]
+    paths: ['.github/workflows/fetch-saadi.yml']
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download all 114 surahs
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.request
+          def get(u):
+              for k in range(5):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"}), timeout=60) as r:
+                          return json.load(r)
+                  except Exception as e:
+                      print("retry", u, e); time.sleep(3 + k * 3)
+              raise SystemExit("failed " + u)
+          meta = [t for t in get("https://quranenc.com/api/v1/tafsirs/list/ur")["tafsirs"] if t["key"] == "urdu_saadi"][0]
+          out = {"key": meta["key"], "version": meta["version"], "last_update": meta["last_update"], "source": "QuranEnc.com", "ayahs": {}}
+          for s in range(1, 115):
+              d = get(f"https://quranenc.com/api/v1/tafsir/sura/urdu_saadi/{s}")
+              for row in d["result"]:
+                  out["ayahs"][f"{s}:{row['aya']}"] = row
+              time.sleep(0.4)
+          json.dump(out, open("urdu_saadi.json", "w"), ensure_ascii=False)
+          print("version", out["version"], "ayah rows", len(out["ayahs"]))
+          print(json.dumps(out["ayahs"]["1:1"], ensure_ascii=False)[:600])
+          PY
+          gzip -k urdu_saadi.json && ls -la urdu_saadi.json*
+      - name: Save
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release upload data -R "$GITHUB_REPOSITORY" --clobber urdu_saadi.json.gz

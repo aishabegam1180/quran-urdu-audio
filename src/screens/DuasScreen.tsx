@@ -53,9 +53,13 @@ export function DuasScreen({ app }: { app: AppCtx }) {
     Share.share({ message: `${parts.join('\n\n')}\n\n— ${duaRef(d)}\n\nShared from Quran Safar – Urdu Tarjuma` }).catch(() => {});
   };
 
+  // recite just this dua's ayahs, here on the Duas screen (tap again to stop)
+  const duaId = (d: Dua) => `dua:${d.id}`;
+  const listening = (d: Dua) => app.ayahRange === duaId(d) && !!app.ayahPlaying;
   const listen = (d: Dua) => {
-    const i = app.trackForAyah(d.s, d.ayahs[0].a);
-    if (i >= 0) app.pick(i);
+    if (listening(d)) return app.stopAyah();
+    const nums = d.ayahs.map((a) => a.a);
+    app.playAyahs(d.s, Math.min(...nums), Math.max(...nums), duaId(d));
   };
 
   const card = ({ item: d }: { item: Dua }) => {
@@ -75,12 +79,24 @@ export function DuasScreen({ app }: { app: AppCtx }) {
             </Text>
           ))}
         </Text>
-        {showUr && <Text style={[styles.ur, { color: t.text }]}>{d.ayahs.map((a) => a.ur).join(' ')}</Text>}
-        {showEn && <Text style={[styles.en, { color: t.text }]}>{d.ayahs.map((a) => a.en).join(' ')}</Text>}
+        {showUr && (
+          <View style={[styles.trBlock, { borderTopColor: t.line }]}>
+            <Text style={[styles.ur, { color: t.text }]}>{d.ayahs.map((a) => a.ur).join(' ')}</Text>
+          </View>
+        )}
+        {showEn && (
+          <View style={[styles.trBlock, { borderTopColor: t.line }]}>
+            <Text style={[styles.en, { color: t.text }]}>{d.ayahs.map((a) => a.en).join(' ')}</Text>
+          </View>
+        )}
         <View style={[styles.actions, { borderTopColor: t.line }]}>
-          <Pressable onPress={() => listen(d)} style={[styles.listen, { backgroundColor: t.activeBg }]}>
-            <Ionicons name="play" size={13} color={t.green} />
-            <Text style={[styles.listenText, { color: t.green }]}>Listen</Text>
+          <Pressable
+            onPress={() => listen(d)}
+            accessibilityLabel={listening(d) ? 'Stop' : 'Listen to this dua'}
+            style={[styles.listen, { backgroundColor: listening(d) ? t.header : t.activeBg }]}
+          >
+            <Ionicons name={listening(d) ? 'stop' : 'play'} size={13} color={listening(d) ? t.gold : t.green} />
+            <Text style={[styles.listenText, { color: listening(d) ? t.headerText : t.green }]}>{listening(d) ? 'Stop' : 'Listen'}</Text>
           </Pressable>
           <Pressable
             onPress={() => app.toggleDuaFav(d.id)}
@@ -159,7 +175,7 @@ export function DuasScreen({ app }: { app: AppCtx }) {
         data={list}
         keyExtractor={(d) => d.id}
         renderItem={card}
-        extraData={[app.duaFavs, t, lang]}
+        extraData={[app.duaFavs, t, lang, app.ayahRange, app.ayahPlaying]}
         initialNumToRender={4}
         windowSize={5}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 + insets.bottom, gap: 12 }}
@@ -198,6 +214,7 @@ const styles = StyleSheet.create({
   ar: { fontFamily: FONTS.arabic, fontSize: 22, lineHeight: 44, textAlign: 'right', writingDirection: 'rtl' },
   ur: { fontFamily: FONTS.urdu, fontSize: 14, lineHeight: 34, textAlign: 'right', writingDirection: 'rtl' },
   en: { fontFamily: FONTS.body, fontSize: 14, lineHeight: 21 },
+  trBlock: { borderTopWidth: StyleSheet.hairlineWidth * 2, paddingTop: 10 },
   langRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
   langLabel: { fontFamily: FONTS.semibold, fontSize: 12 },
   segment: { flex: 1, flexDirection: 'row', padding: 3, gap: 3, borderRadius: 12 },
